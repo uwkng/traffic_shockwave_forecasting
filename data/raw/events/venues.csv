@@ -1,0 +1,8 @@
+venue_name,venue_lat,venue_lon,typical_capacity,notes
+SAP Center,37.3327,-121.9010,17562,San Jose Sharks (NHL) — inside sensor network
+Avaya Stadium,37.3511,-121.9252,18000,SJ Earthquakes (MLS) — inside sensor network
+Levi's Stadium,37.4033,-121.9694,68500,49ers (NFL) / concerts — network edge
+Oracle Arena,37.7503,-122.2031,19596,Warriors (NBA) — outside network but 880 corridor
+Oakland Coliseum,37.7516,-122.2006,35067,Oakland A's (MLB) / Raiders (NFL) — outside network but 880 corridor
+AT&T Park,37.7786,-122.3893,41915,SF Giants (MLB) — outside network
+Stanford Stadium,37.4346,-122.1609,50424,College football (fall only)
