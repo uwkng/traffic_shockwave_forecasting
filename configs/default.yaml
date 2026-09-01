@@ -22,5 +22,23 @@ data:
     input: 12              # 60 min of history
     horizon: 12            # 60 min ahead
 
+model:
+  stgcn:
+    Kt: 3                  # temporal conv kernel size
+    Ks: 3                  # Chebyshev polynomial order
+    blocks: [[1, 64, 64], [64, 64, 64]]   # [c_in, c_mid, c_out] per ST-Conv block
+    dropout: 0.3
+
+training:
+  lr: 0.001
+  weight_decay: 0.0001
+  batch_size: 64
+  epochs: 200
+  patience: 20
+  scheduler:
+    step_size: 10
+    gamma: 0.7
+  checkpoint_dir: checkpoints
+
 seed: 42
 n_seeds: 3                 # runs per config for mean ± std
