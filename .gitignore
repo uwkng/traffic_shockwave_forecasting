@@ -220,3 +220,7 @@ __marimo__/
 # Stage 1b: fetch_events.py caches every ESPN response and archived page here
 # (~1,100 files). Deleting it only forces a re-download; it is not source data.
 data/raw/events/_cache/
+
+# large raw checkouts / derived tensors (regenerate with src/data/acquire.py)
+data/raw/augmented-pems-bay/
+data/processed/

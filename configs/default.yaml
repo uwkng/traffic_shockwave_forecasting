@@ -5,7 +5,13 @@ data:
   raw_dir: data/raw
   processed_dir: data/processed
   pems_bay_dir: data/raw/augmented-pems-bay
-  weather_csv: data/raw/weather/weather_hourly.csv
+  # This is what acquire.build_weather() actually WRITES (5-min, ASOS SJC+NUQ,
+  # IDW-merged). It is NOT weather_hourly.csv - that name appears in acquire.py's
+  # module docstring but no code ever produces it, and a stale Open-Meteo file
+  # under that name sat here until 2026-09-04. Pointing at it did not error, it
+  # silently fed the pipeline hourly reanalysis instead of 5-min gauge data.
+  # The old file is kept as weather_openmeteo_OLD_do_not_use.csv.
+  weather_csv: data/raw/weather/weather_5min.csv
   events_csv: data/raw/events/events.csv
   venues_csv: data/raw/events/venues.csv
 
