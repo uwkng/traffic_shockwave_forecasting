@@ -23,10 +23,10 @@ interchangeably.
 |---|-------|------|
 | 1 | Acquire raw sources (PEMS-BAY, weather, events) | `src/data/acquire.py` |
 | 2-3 | Align to 5-min index + graph + distance-to-venue | `src/data/align.py` |
-| 4 | Assemble 11-channel tensor `[T,N,11]` | `src/data/features.py` |
-| 5 | Slice samples  X`[12,N,C]` Y`[12,N,1]` | `src/data/samples.py` |
-| 6 | Chronological split: single 70/10/20 + 6 rolling folds | `src/data/split.py` |
-| 7 | Z-score PER CHANNEL (train-fit only), save scaler | `src/data/normalize.py` |
+| 4 | Assemble 9-channel tensor `[T,N,9]` | `src/data/features.py` |
+| 5 | Slice samples  X`[12,N,9]` Y`[12,N,1]` | `src/data/samples.py` |
+| 6 | Chronological 70/10/20 split | `src/data/split.py` |
+| 7 | Z-score (train-fit only), save scaler | `src/data/normalize.py` |
 | - | Orchestrator for stages 1-7 | `src/data/build_dataset.py` |
 | 9 | Models -> de-normalized predictions | `src/models/` |
 | 10 | Uniform prediction I/O | `src/models/predict.py` |
@@ -42,16 +42,9 @@ interchangeably.
 - Chronological split, **NO shuffling** - shuffling leaks the future.
 - Fit the scaler on **train only** - fitting on all data silently inflates results.
 - All metrics computed **after de-normalization** (real mph) - carry the scaler to eval.
-- `dist_to_venue` is load-bearing: it is the only static spatial anchor for the
-  event channels. Do not drop it.
-- Never rebuild the master tensor per ablation rung. Build it once with all 11
-  channels and select COLUMNS at the dataloader via `contract.rung_channels(rung)`,
-  so every rung shares one set of splits and scalers and the MAEs stay comparable.
-- Do NOT report any weather result on the `single` split: its test block contains
-  ZERO adverse-weather episodes, so the weather channels are constant there.
-- The scaler is per CHANNEL. One global mean/std over the tensor would average
-  mph with a 0/1 holiday flag, kilometres and millimetres.
-- Reproduce vanilla STGCN on plain PEMS-BAY BEFORE adding channels. (Done: stage 8.)
+- Channel 8 `dist_to_venue` is load-bearing: event features are broadcast to every
+  node identically, so distance is the ONLY thing giving them a spatial anchor. Do not drop it.
+- Reproduce vanilla STGCN on plain PEMS-BAY BEFORE adding the 1->9 channel change.
 - DCRNN is optional and time-boxed (legacy TF1.x); if it fights the environment, drop it.
   STGCN + baselines + full eval is already the complete contribution.
 

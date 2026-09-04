@@ -196,7 +196,23 @@ features:
 
 split:
   mode: rolling             # single | rolling
-  embargo_steps: 24         # = input(12) + horizon(12); dropped at each boundary
+  # 0 = no embargo, matching notebooks/train_stgcn.ipynb and every published
+  # PEMS-BAY baseline. Set to 24 (= input 12 + horizon 12) to drop the samples
+  # that straddle a split boundary.
+  #
+  # What the embargo is for: a sample spans 24 timesteps, and consecutive
+  # samples are one step apart, so cutting the SAMPLE LIST at 70% cuts through
+  # overlapping TIME ranges. Without it, train's last target (05-07 17:15-18:10)
+  # and val's first target (17:20-18:15) share 55 minutes - the model is scored
+  # on hours it was trained on. 23 samples at each of the two boundaries.
+  #
+  # Why 0 is nonetheless a defensible default here: train and test are separated
+  # by the whole of val, so no training gradient ever sees a test target and the
+  # headline test number is unaffected. What it touches is early stopping - val
+  # MAE is slightly optimistic, so a marginally different epoch may be selected.
+  # Keeping it at 0 makes our splits like-for-like with the published baselines
+  # we compare against, which do not embargo either.
+  embargo_steps: 0
   single:                   # ONLY for reproducing published vanilla-STGCN numbers.
     train: 0.70             # Its test period holds ZERO adverse-weather timesteps,
     val: 0.10               # so no weather result may be reported on it.

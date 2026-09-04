@@ -3,74 +3,136 @@
 Event- and weather-aware spatio-temporal graph networks for traffic shockwave
 forecasting. Course project, *Deep Learning and Decision Making* (TUM).
 
-**The contribution is the evaluation protocol, not the model.** We take
-off-the-shelf STGCN (main) and DCRNN (optional), condition them on weather and
-scheduled-event signals, and evaluate accuracy inside exogenously-defined
-anomalous windows and by distance from the venue.
+**The contribution is the evaluation protocol, not the model.** Off-the-shelf
+STGCN, conditioned on weather and scheduled-event signals, evaluated *inside
+exogenously-defined anomalous windows* — an event egress hour, an adverse-weather
+spell — rather than on average.
+
+- **`STATUS.md`** — what is done, what is not, and the decision log with the
+  measurement behind each choice. Read it before changing anything.
+- **`src/contract.py`** — shapes, channel order, splits, prediction format.
+  The interface all three workstreams build against.
 
 ## Quick start
 
 ```bash
-# 1. Clone and set up environment
 git clone <repo-url> && cd traffic_shockwave_forecasting
-uv sync                          # installs all dependencies from pyproject.toml
+pip install numpy pandas pyyaml requests        # pipeline
+pip install torch scipy                         # training only
 
-# 2. Acquire raw data (~200 MB PEMS-BAY clone + weather API call)
-python -m src.data.acquire
+# first run also clones PEMS-BAY (233 MB) and downloads the weather
+python -m src.data.build_dataset --config configs/default.yaml --acquire
+
+# rebuilds take ~15 s afterwards
+python -m src.data.build_dataset --config configs/default.yaml
+
+# sanity check: prints every rung, every split, and one real sample
+python -m src.models.loader --split single
 ```
 
-## Project status
+If the download fails with `SSL: CERTIFICATE_VERIFY_FAILED`, your Python has no
+CA bundle — the usual python.org-installer situation on macOS. Fix the machine,
+not `acquire.py`: `open "/Applications/Python 3.x/Install Certificates.command"`.
 
-**Check `STATUS.md`** for what's done, what's in progress, who owns what,
-and what to work on next. Update it after every meaningful change.
+## What you get
 
-## Data contract (the interface everyone builds against)
+`data/processed/`, ~1 GB, gitignored — rebuild it, do not ship it.
 
-Defined in `src/contract.py`. Summary:
-
-| Artifact | Shape | Notes |
+| File | Shape | What |
 |---|---|---|
-| master tensor | `[52116, 325, 9]` | `[T, N, channels]` |
-| sample X | `[12, 325, 9]` | 60 min history, all channels |
-| sample Y | `[12, 325, 1]` | 60 min ahead, speed only |
-| split | 70 / 10 / 20 | chronological, no shuffle |
-| predictions | `[n_test, 12, 325]` | **de-normalized** speed (mph), same format for every model |
+| `master.npy` | `[52116, 325, 11]` | the whole period, every channel. 745 MB; open with `mmap_mode="r"` |
+| `splits.npz` | 21 arrays | sample indices: `single__train`, `fold00__test`, … |
+| `scalers.json` | — | per-channel mean/std, one set per split |
+| `eval_mask.npy` | `[52116, 325]` | True where speed was observed, not imputed |
+| `adj_mx.npy` | `[325, 325]` | Gaussian-kernel adjacency, threshold 0.1 |
+| `*_meta.json` | — | per-stage provenance, human-readable |
 
-9 channels, fixed order: `speed, time_of_day, day_of_week, precipitation,
-temperature, wind_speed, event_active, event_magnitude, dist_to_venue`.
+`master.npy` is not split. It is the full six months; `splits.npz` indexes into
+it. Same tensor, different bookmarks.
 
-## Raw data sources
+## Using it
 
-| Source | Location | How acquired |
-|--------|----------|--------------|
-| PEMS-BAY (speed, graph, sensor metadata) | `data/raw/augmented-pems-bay/` | `git clone` via `acquire.py` |
-| Weather (temp, precip, wind) | `data/raw/weather/weather_hourly.csv` | Open-Meteo Historical API |
-| Events (149 games, 5 teams) | `data/raw/events/events.csv` | MLB/NHL/NBA APIs, exact start times |
+```python
+from src.models.loader import build_loaders
+
+loaders, adj, scaler = build_loaders(rung="6_all", split="fold00")
+model = STGCN(c_in=loaders["c_in"], ...)
+
+for X, Y in loaders["train"]:        # X normalised, Y raw mph
+    ...
+pred_mph = scaler.to_mph(pred)       # before any metric
+```
+
+`rung` selects channels (`"0_speed"` … `"6_all"`), `split` selects bookmarks
+(`"single"`, `"fold00"`…`"fold05"`). Nothing else changes.
+
+The loader owns the seven things that are easy to get wrong and never fail
+loudly — which columns, which split's scaler, per channel not global,
+passthrough channels, raw target, de-normalisation, the eval mask. Its docstring
+explains each. Don't reimplement them.
+
+### Which split
+
+**Use one split for the whole paper.** Two configurations evaluated on different
+test sets cannot be subtracted.
+
+| | `single` (70/10/20) | `fold00`…`fold05` (rolling) |
+|---|---|---|
+| for | reproducing published numbers | everything else |
+| test rain episodes | **0** | 51 |
+| test event episodes | 17 | 50 |
+
+> ⚠️ The `single` test block (2017-05-25 → 06-30) contains **zero**
+> adverse-weather episodes — California's wet season is January to April. A
+> weather-conditioned model cannot differ from a traffic-only one there, because
+> the channel is constant across the whole block. `split.py` prints this when it
+> runs. Weather results must come from the rolling folds.
+
+## Raw data
+
+| Source | Location | Committed |
+|---|---|---|
+| PEMS-BAY (speed, occupancy, graph, labelled congestion blocks) | `data/raw/augmented-pems-bay/` | no — cloned by `acquire.py` |
+| Weather — ASOS SJC + NUQ, IDW-merged | `data/raw/weather/weather_5min.csv` | yes, 3 MB |
+| Events — 95 fixtures, 4 venues | `data/raw/events/events.csv` | yes |
+
+`data/raw/events/README.md` is the events data dictionary: every column, its
+source, and whether each value was observed or assumed.
+
+## Traps
+
+1. **Never build the time axis with `pd.date_range`.** PEMS-BAY timestamps are
+   local wall-clock US Pacific and 2017-03-12 02:00–02:55 does not exist (DST).
+   181 × 288 = 52,128, but the file has 52,116 columns. Generating the axis adds
+   12 phantom steps and silently shifts every later timestamp by an hour. The
+   axis comes from `speed.csv`'s own column names; join weather and events **by
+   label**.
+2. **The scaler is per channel, and per split.** One global mean/std would
+   average mph with a 0/1 holiday flag, kilometres and millimetres.
+3. **We keep weekends and holidays**, unlike Yu et al. 48% of our events fall on
+   a weekend; excluding them removes the windows this project evaluates.
+4. **`weather_hourly.csv` is gone.** It was a stale Open-Meteo export sitting at
+   the path the config pointed to while `build_weather()` wrote
+   `weather_5min.csv`. The file existed, so nothing raised. If you see that name
+   anywhere, it is stale.
 
 ## Layout
 
 ```
-configs/         yaml configs (paths, hyperparams, thresholds)
-data/raw/        untouched downloads (gitignored)
-data/processed/  built tensors + scaler (gitignored)
-src/contract.py  <- single source of truth for shapes/format
-src/data/        stages 1-7: acquire -> align -> features -> samples -> split -> normalize
-src/models/      baselines, stgcn, prediction I/O
-src/eval/        metrics, windows, spatial (distance+onset), sepa, decision
-results/         tables + figures (gitignored)
-report/          Overleaf paper source
-STATUS.md        <- live project tracker, update after every change
-CLAUDE.md        <- project rules for Claude Code sessions
+configs/default.yaml    paths, thresholds, split parameters
+src/contract.py         shapes, channel order, splits  <- the interface
+src/data/               stages 1-7
+src/models/loader.py    data/processed -> model input
+src/eval/windows.py     the exogenous window definitions
+data/raw/               downloads; only weather + events are committed
+data/processed/         built tensors (gitignored, rebuild in 15 s)
+notebooks/              stage 8 reproduction
+STATUS.md               status, ownership, decisions
+CLAUDE.md               rules for Claude Code sessions
 ```
-
-## Working with Claude Code
-
-`CLAUDE.md` (repo root) is read automatically at the start of every Claude Code
-session and holds the project rules, pipeline, and ownership. Keep it current.
-Install / usage details: https://docs.claude.com/en/docs/claude-code/overview
-Personal, non-shared instructions go in `CLAUDE.local.md` (gitignored).
 
 ## Reproducibility
 
-Seed everything; 3 seeds per trained config; chronological split; scaler fit on
-train only; all metrics after de-normalization.
+Chronological splits, no shuffling. Scalers fit on train only, per channel, per
+fold. All metrics after de-normalization, masked with `eval_mask.npy`. Seed
+everything; 3 seeds per trained config.

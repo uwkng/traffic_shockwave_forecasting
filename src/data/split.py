@@ -116,8 +116,7 @@ def census(cfg: dict, time_index: pd.DatetimeIndex, test_idx: np.ndarray) -> dic
     test block scores ZERO adverse-weather episodes, which is why no weather
     result may be reported on it.
     """
-    empty = {"episodes_wx": 0, "episodes_events": 0, "holidays": 0,
-             "steps_wx": 0, "precip_mm": 0.0}
+    empty = {"episodes_wx": 0, "episodes_events": 0, "holidays": 0, "steps_wx": 0}
     if not len(test_idx):
         return empty
     span = contract.INPUT_WINDOW + contract.HORIZON
@@ -137,15 +136,16 @@ def census(cfg: dict, time_index: pd.DatetimeIndex, test_idx: np.ndarray) -> dic
     ev_mask &= block
     hol = windows.holiday_mask(time_index) & block
 
-    w = pd.read_csv(cfg["data"]["weather_csv"], parse_dates=["timestamp"])
-    w = w[(w["timestamp"] >= lo) & (w["timestamp"] <= hi)]
+    # No precipitation total. The precipitation column is a forward-filled
+    # backward 1-hour accumulation, so summing it counts every hourly reading
+    # twelve times - see align.align_weather. Episode and step counts are
+    # unaffected, because both are threshold comparisons per step, not sums.
     return {
         "from": str(lo), "to": str(hi),
         "episodes_wx": episodes(wx),
         "episodes_events": episodes(ev_mask),
         "holidays": episodes(hol, gap=288),
         "steps_wx": int(wx.sum()),
-        "precip_mm": round(float(w["precipitation"].sum()), 1),
     }
 
 
@@ -223,18 +223,50 @@ def main() -> int:
     print(f"    {'TOTAL':7s}{'':>8s}{'':>7s}{'':>7s}  {'':38s}"
           f"{tot_wx:>5}{tot_ev:>5}{tot_hol:>4}")
 
-    # ---- leakage assertions ---------------------------------------------
+    # ---- boundary check --------------------------------------------------
+    # A sample spans INPUT_WINDOW + HORIZON steps and consecutive samples are one
+    # step apart, so cutting the SAMPLE LIST cuts through overlapping TIME
+    # ranges. With an embargo the boundaries are clean and this asserts it. With
+    # embargo_steps = 0 - the published PEMS-BAY convention, and what
+    # notebooks/train_stgcn.ipynb does - they are not, so the overlap is
+    # MEASURED AND REPORTED instead of being asserted away. It is a deliberate
+    # choice, not an accident, and it should be visible in the build log.
+    span = contract.INPUT_WINDOW + contract.HORIZON
+    embargo = int(cfg["split"]["embargo_steps"])
+    overlaps = {}
     for label, parts_ in [("single", parts)] + [(k, v) for k, v in folds.items()]:
         tr, va, te = parts_["train"], parts_["val"], parts_["test"]
-        span = contract.INPUT_WINDOW + contract.HORIZON
         assert not (set(tr) & set(va) & set(te)), f"{label}: overlapping sample ids"
+        # sample ids must still be strictly ordered train < val < test
         if len(tr) and len(va):
-            assert tr.max() + span <= va.min(), \
-                f"{label}: train target window overlaps val input window"
+            assert tr.max() < va.min(), f"{label}: train/val are not chronological"
         if len(va) and len(te):
-            assert va.max() + span <= te.min(), \
-                f"{label}: val target window overlaps test input window"
-    print("\n  leakage assertions passed for every split and fold")
+            assert va.max() < te.min(), f"{label}: val/test are not chronological"
+        n = 0
+        if len(tr) and len(va):
+            n += max(0, int(tr.max() + span - va.min()))
+        if len(va) and len(te):
+            n += max(0, int(va.max() + span - te.min()))
+        overlaps[label] = n
+
+    worst = max(overlaps.values())
+    meta["embargo_steps"] = embargo
+    meta["boundary_overlap_steps"] = overlaps
+    if worst == 0:
+        print(f"\n  boundaries clean: embargo {embargo} >= {span} steps, no sample "
+              "spans a split boundary")
+    else:
+        n_tr = len(parts["train"]) + len(parts["val"]) + len(parts["test"])
+        print(f"\n  embargo_steps = {embargo}: boundaries are NOT embargoed.")
+        print(f"    Up to {worst} timesteps of overlap at a boundary "
+              f"({worst} samples of {n_tr:,} = {100 * worst / n_tr:.2f}%).")
+        print("    train's last target and val's first target share time, so val "
+              "MAE is\n    slightly optimistic and early stopping may pick a "
+              "different epoch.")
+        print("    TEST IS UNAFFECTED: train and test are separated by the whole "
+              "of val, so\n    no training gradient sees a test target.")
+        print(f"    This matches the published PEMS-BAY convention. Set "
+              f"embargo_steps: {span} to remove it.")
 
     np.savez_compressed(P / "splits.npz", **arrays)
     meta["generated"] = dt.datetime.now().isoformat(timespec="seconds")

@@ -94,22 +94,47 @@ TIME_OF_DAY_ENCODING = "fraction"   # "fraction" | "sincos" (sincos => 12 channe
 # rebuild the tensor per rung - the splits and scalers must be identical across
 # rungs or the MAE numbers are not comparable.
 CHANNEL_GROUPS = {
-    "traffic":   ["speed", "occupancy"],
+    "speed":     ["speed"],
+    "occupancy": ["occupancy"],
     "calendar":  ["time_of_day", "day_of_week", "is_holiday"],
     "weather":   ["temperature", "precipitation", "wind_speed"],
     "event_geo": ["dist_to_venue", "event_active_decay"],
     "event_att": ["event_load"],
 }
-# The rungs, in the order the team agreed. `traffic` is in every rung: without
-# speed history there is nothing to condition ON.
+# speed and occupancy are SEPARATE groups, so rung 0 is speed alone. Two reasons,
+# and the second is the stronger one:
+#
+#   * rung 0 is then the published configuration. Every STGCN / DCRNN /
+#     Graph WaveNet number on PEMS-BAY is one channel, speed only, so rung 0 can
+#     be read against the literature directly. (checkpoints/stgcn_seed42.pt is
+#     also c_in=1, though it was trained by the stage-8 notebook on its own
+#     split, without embargo, so it is not weight-compatible with a run here.)
+#
+#   * it makes occupancy VISIBLE. Occupancy is worth +0.153 incremental R2 over
+#     a per-node AR(12) baseline - the second strongest channel measured, and
+#     about a hundred times the whole weather group. Bundled into the baseline
+#     that finding is invisible; as its own rung, the 0 -> 1 difference IS the
+#     finding.
+#
+# `speed` is in every rung: without speed history there is nothing to condition ON.
 ABLATION_RUNGS = {
-    "1_traffic":            ["traffic"],
-    "2_calendar":           ["traffic", "calendar"],
-    "3_weather":            ["traffic", "weather"],
-    "4_event_geo":          ["traffic", "event_geo"],
-    "5_event_geo_att":      ["traffic", "event_geo", "event_att"],
-    "6_all":                ["traffic", "calendar", "weather", "event_geo", "event_att"],
+    "0_speed":              ["speed"],
+    "1_traffic":            ["speed", "occupancy"],
+    "2_calendar":           ["speed", "occupancy", "calendar"],
+    "3_weather":            ["speed", "occupancy", "weather"],
+    "4_event_geo":          ["speed", "occupancy", "event_geo"],
+    "5_event_geo_att":      ["speed", "occupancy", "event_geo", "event_att"],
+    "6_all":                ["speed", "occupancy", "calendar", "weather",
+                             "event_geo", "event_att"],
 }
+
+
+def future_channels(rung: str) -> list[int]:
+    """Indices, within a rung's own column list, of the channels whose future is
+    known. Returns positions into `rung_channels(rung)`, not into CHANNELS."""
+    cols = rung_channels(rung)
+    known = set(KNOWN_FUTURE_CHANNELS)
+    return [j for j, i in enumerate(cols) if CHANNELS[i][0] in known]
 
 
 def rung_channels(rung: str) -> list[int]:
@@ -147,8 +172,64 @@ EVENT_LOAD_DISTANCE = "haversine"   # "haversine" | "road" (distances_bay_2017.c
 
 # --- Windowing ---
 INPUT_WINDOW = 12       # 12 steps = 60 min of history  -> X
+
 HORIZON = 12            # 12 steps = 60 min ahead       -> Y
 EVAL_HORIZON_STEPS = {"15min": 3, "30min": 6, "60min": 12}
+
+# A LONGER HORIZON IS THE OBVIOUS NEXT EXPERIMENT, and it is nearly free -
+# horizon only sizes the final Linear(64, HORIZON); the ST-Conv blocks operate
+# on INPUT_WINDOW and do not change, so 36 steps costs ~1,500 extra parameters
+# and no measurable time. Set HORIZON = 36 and add {"120min": 24, "180min": 36}
+# to EVAL_HORIZON_STEPS; one model then emits all five horizons as slices and
+# the 15/30/60 numbers still compare to the literature. Stages 5-7 rebuild in
+# seconds.
+#
+# It is worth doing because at 60 minutes the answer is mostly already in the
+# input. A per-node AR(12) baseline on this data scores, on the test split:
+#       15 min  R2 0.890      2 h  R2 0.288
+#       30 min  R2 0.768      3 h  R2 0.147
+#       60 min  R2 0.567      4 h  R2 0.088
+# Speed history alone explains 57% of the variance at 60 min, so the exogenous
+# channels compete for the remainder - which is why they measure as worth almost
+# nothing there. At 3 h history explains 15%, and what is left is precisely what
+# a schedule and a forecast know. It is also the horizon the decision layer
+# needs: an hour of warning is barely actionable, three is enough to staff a
+# shift.
+#
+# NOT the default, because the loss would then average over 36 steps instead of
+# 12, weighting the long horizons more and possibly making the 15-min number
+# worse than a model trained for 12 alone. That is a result to measure, not to
+# assume, and 12 keeps the setup like-for-like with the published baselines.
+
+# --- Known future covariates -------------------------------------------------
+# Channels whose value at a FUTURE timestep is already known when the prediction
+# is made. A schedule is published months ahead and a weather forecast a day
+# ahead; a calendar is knowable forever. Only speed and occupancy have to be
+# observed, and they are the two this excludes.
+#
+# This is what "exogenous" means in the proposal, and feeding these only as
+# history does not deliver it. Measured on this dataset: of the samples whose
+# TARGET window contains adverse weather, the fraction whose INPUT window is
+# completely dry - i.e. the rain starts inside the horizon and the model has no
+# way to know - is
+#       15 min   8.2%      60 min  22.4%      3 h  41.9%
+# Those are not hard cases, they are blind ones. The forecast said so.
+#
+# loader.build_loaders(future_covariates=True) appends, for each input step i,
+# the value of these channels at step i + HORIZON, so the model sees the
+# exogenous state of the window it is predicting. It doubles nothing else: the
+# time dimension stays INPUT_WINDOW and only c_in grows.
+KNOWN_FUTURE_CHANNELS = [
+    "time_of_day", "day_of_week", "is_holiday",
+    "temperature", "precipitation", "wind_speed",
+    "event_active_decay", "event_load",
+]
+# Known in advance but deliberately NOT duplicated. dist_to_venue is `spatial`:
+# constant over time, so its future value is bit-identical to its present one
+# and a second copy is a column of duplicated numbers. Any channel added to
+# CHANNELS as "spatial" belongs here, not above.
+STATIC_CHANNELS = ["dist_to_venue"]
+OBSERVED_ONLY_CHANNELS = ["speed", "occupancy"]
 
 # Samples whose X or Y straddles a split boundary leak the future across it.
 EMBARGO = INPUT_WINDOW + HORIZON        # 24 steps, dropped on EACH side

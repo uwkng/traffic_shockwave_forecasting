@@ -14,9 +14,11 @@ Last updated: 2026-09-04
 | 7 | Z-score per channel (train-fit only), save scaler | `src/data/normalize.py` | DONE | A |
 | - | Orchestrator for stages 1-7 | `src/data/build_dataset.py` | DONE | A |
 | 8 | Reproduce vanilla STGCN on plain PEMS-BAY | `src/models/` | DONE | B |
-| 9 | STGCN with multi-channel input | `src/models/` | TODO | B |
+| - | `data/processed` -> model input | `src/models/loader.py` | DONE | A |
+| 9 | STGCN with multi-channel input | `src/models/stgcn.py` | **BLOCKED** | B |
 | 10 | Uniform prediction I/O | `src/models/predict.py` | TODO | B |
-| 11 | Metrics, windows, distance bins, onset, SEPA | `src/eval/` | TODO | C |
+| 11 | Exogenous window definitions | `src/eval/windows.py` | DONE | A |
+| 11 | Metrics, distance bins, onset, SEPA | `src/eval/` | TODO | C |
 | 12 | Decision layer | `src/eval/decision.py` | TODO | C |
 
 ## Ownership
@@ -54,12 +56,20 @@ Last updated: 2026-09-04
     dataloader** - never rebuild the tensor per rung, or the splits and scalers
     stop being identical across rungs and the MAE numbers stop being comparable.
 
-        1_traffic       c_in= 2   [0,1]
+        0_speed         c_in= 1   [0]            <- the published configuration
+        1_traffic       c_in= 2   [0,1]          <- 0 -> 1 IS occupancy's value
         2_calendar      c_in= 5   [0,1,2,3,4]
         3_weather       c_in= 5   [0,1,5,6,7]
         4_event_geo     c_in= 4   [0,1,8,9]
         5_event_geo_att c_in= 5   [0,1,8,9,10]
         6_all           c_in=11   [0..10]
+
+    Rung 0 is speed alone, not speed+occupancy. It is the configuration every
+    published PEMS-BAY number uses, so it reads against the literature directly;
+    and it makes occupancy visible, which matters because occupancy is worth
+    +0.153 incremental R2 - the second strongest channel measured, about a
+    hundred times the whole weather group. Bundled into the baseline that
+    finding cannot be seen.
 
   - **Splits**: `single` (70/10/20, for reproducing published numbers ONLY) and
     six expanding-window rolling folds. Counted in EPISODES, which is the
@@ -104,6 +114,141 @@ Last updated: 2026-09-04
     Coordinates cross-checked against a second, independent source (Wikidata as
     well as OpenStreetMap); worst disagreement 54 m against a 500 m tolerance.
 
+## Handover: picking up stages 9-12
+
+### What is blocking
+
+**`src/models/` has no model in it.** The STGCN definition, the training loop
+and the metrics live inline in `notebooks/train_stgcn.ipynb`, cells 5 / 7 / 11 /
+13, so nothing downstream can import them. Stages 10 and 11 wait on:
+
+```
+src/models/stgcn.py     cell 7 as-is, with c_in a parameter instead of 1
+src/models/train.py     cells 11 + 13, taking --rung and --split
+src/models/predict.py   write [n_test, 12, 325] de-normalized mph
+```
+
+`src/models/loader.py` already exists and hands you a DataLoader:
+
+```python
+loaders, adj, scaler = build_loaders(rung="6_all", split="fold00")
+model = STGCN(c_in=loaders["c_in"], ...)
+```
+
+### The ablation ladder
+
+`contract.ABLATION_RUNGS`. Build the master tensor ONCE and select columns per
+rung — rebuilding per rung gives each rung its own splits and scalers, and the
+MAEs stop being comparable.
+
+| rung | `c_in` | adds | note |
+|---|---:|---|---|
+| `0_speed` | 1 | — | the published PEMS-BAY configuration |
+| `1_traffic` | 2 | occupancy | 0 -> 1 IS occupancy's value: +0.153 incremental R2 |
+| `2_calendar` | 5 | time_of_day, day_of_week, is_holiday | |
+| `3_weather` | 5 | temperature, precipitation, wind_speed | **rolling folds only** |
+| `4_event_geo` | 4 | dist_to_venue, event_active_decay | expected to be FLAT — see below |
+| `5_event_geo_att` | 5 | + event_load | 4 -> 5 isolates attendance |
+| `6_all` | 11 | everything | |
+
+Rung 4 measuring flat is the result, not a bug. Inside the egress hour, over
+8,649 (event, node) pairs from 75 events: activity alone scores t = -1.02 (not
+significant), the thresholded attendance weight scores t = -9.76. The
+information is in the attendance, not in the fact that an event is on.
+
+`build_loaders(..., future_covariates=True)` additionally feeds the exogenous
+state of the window being predicted — the forecast and the fixture list, which
+in reality are known days ahead. **Off by default**, because it changes the task
+and no published baseline has that information. Worth running both ways and
+reporting the difference: of samples whose target window contains adverse
+weather, 22.4% have an entirely dry input window at a 60-min horizon, so the
+model is blind there, not merely wrong.
+
+### Splits
+
+Both schemes are in `splits.npz`. Counts are EPISODES — one rain spell, one
+egress hour — which is the paper's n; 5-min steps and neighbouring sensors are
+heavily correlated, so a standard error over timesteps understates it by roughly
+`sqrt(n_timesteps / n_episodes)`.
+
+| split | train | val | test | test period | rain | events | holidays |
+|---|---:|---:|---:|---|---:|---:|---:|
+| `single` | 36,449 | 5,207 | 10,414 | 05-25 → 06-30 | **0** | 17 | 1 |
+| `fold00` | 6,048 | 2,016 | 8,064 | 01-29 → 02-26 | 27 | 6 | 1 |
+| `fold01` | 14,112 | 2,016 | 8,029 | 02-26 → 03-26 | 12 | 11 | 0 |
+| `fold02` | 22,141 | 2,016 | 8,064 | 03-26 → 04-23 | 12 | 11 | 0 |
+| `fold03` | 30,205 | 2,016 | 8,064 | 04-23 → 05-21 | 0 | 5 | 0 |
+| `fold04` | 38,269 | 2,016 | 8,064 | 05-21 → 06-18 | 0 | 12 | 1 |
+| `fold05` | 46,333 | 2,016 | 3,721 | 06-18 → 06-30 | 0 | 5 | 0 |
+| | | | | **rolling total** | **51** | **50** | **2** |
+
+**All 90 rain spells in the period fall inside `single`'s train span.** That is
+climate, not a split ratio: California's wet season is January to April, so any
+chronological split puts val and test in the dry half. No weather result can
+come from `single`.
+
+Holidays are n = 2 across the rolling test folds. Report them as cases
+("Memorial Day, +11.27 mph in the PM peak"), never with an error bar.
+
+`embargo_steps: 0`, matching the notebook and every published PEMS-BAY baseline.
+That leaves up to 46 timesteps of overlap at a boundary, which `split.py` prints
+rather than asserts away. Train and test are separated by the whole of val, so
+no training gradient sees a test target; what it touches is early stopping. Set
+`embargo_steps: 24` to remove it.
+
+### Evaluation windows
+
+`src/eval/windows.py`. Effects below are the speed anomaly against the same
+sensor at the same time-of-week on days with no event and no rain.
+
+| window | rule | effect |
+|---|---|---|
+| adverse weather | `precipitation >= 0.51 mm` | **-2.22 mph** |
+| event egress | `[end_time, end_time+60min)`, attendance >= 15,000 | **-1.22 mph** (NHL, <=2 km) |
+| holiday | 5 US federal holidays | **+9.50 / +11.27 mph** (AM / PM peak) |
+
+- **Two weather tiers, not three.** `p01i` is a backward 1-hour accumulation and
+  `_parse_asos` forward-fills it across the next twelve 5-min steps. That
+  inflates "light rain" from 4.6% of timesteps (METAR present-weather) to 16.3%
+  and dilutes its effect from -1.72 to -0.78 mph. For the same reason the
+  precipitation column **cannot be summed** — each hourly reading appears twelve
+  times.
+- **The egress hour, not the fixture.** A doors-to-end window spans ~5.5 h,
+  dilutes the dip fivefold and reads *+0.41* mph. Aligned on scheduled start over
+  24 SAP Center evening NHL games, sensors within 2 km, the dip is
+  **-1.69 ± 0.51 mph at +180 min** and recovers by +270.
+- **Holidays are positive** — a holiday removes the commute rather than adding a
+  crowd. Report as a stratum, never merge into "adverse".
+
+Every `events.csv` column stays available for stratified reporting even though
+only four enter the tensor. Stratification happens at evaluation time, indexed
+by timestep: `event_type`, `confidence`, `attendance_is_estimated` and the rest
+are report dimensions, not model inputs. Measured example — egress effect by
+whether the attendance figure was sourced or assumed: sourced (n=41)
+**-0.51 ± 0.24**, assumed (n=54) **+0.29 ± 0.22**. That contrast is confounded
+with attendance size and must be reported as such.
+
+### Ideas measured but not implemented
+
+- **Longer horizon.** `HORIZON` is 12. Setting it to 36 costs ~1,500 parameters
+  and no measurable time — horizon only sizes the final `Linear(64, HORIZON)`,
+  while the ST-Conv blocks work on `INPUT_WINDOW`. One model would then emit
+  15/30/60/120/180 as slices. Worth doing because AR(12) scores R2 0.567 at
+  60 min but 0.147 at 3 h: at 60 min speed history already explains most of the
+  variance, which is why the exogenous channels measure as worth so little
+  there. See the note in `contract.py`.
+- **Per-node weather.** Rejected: IDW to each sensor is worth +0.00008
+  incremental R2 over one network-wide series, despite the two stations
+  disagreeing in 42.7% of wet hours.
+- **`rain_intensity`** (METAR present-weather ladder). Rejected: needs
+  `wxcodes`, which `acquire.fetch_asos` does not request.
+- **A time-of-week climatology as a channel.** Rejected: it is the proposal's
+  own historical-average baseline (MAE 2.63 at 60 min against the trained
+  STGCN's 2.58), and folding the baseline into the model destroys that
+  comparison. It is the strongest single predictor measured (+0.216 R2), which
+  is itself the finding.
+
+
 ## Decisions log
 
 Record choices here so they don't get lost in chat.
@@ -144,7 +289,7 @@ Record choices here so they don't get lost in chat.
 ## Next steps
 
 1. **Stage 2-3 (align.py)**: Resample weather from hourly → 5-min, map events onto the 5-min index, build adjacency matrix, compute dist_to_venue per sensor
-2. **Stage 9 (multi-channel STGCN)**: set the first block's `c_in` from `contract.rung_channels(rung)` - it is 2, 4, 5 or 11 depending on the ablation rung, NOT a fixed number. Stages 2-7 now produce the tensor, so this is unblocked. NOTE `src/models/` does not exist on any branch: the model and training loop live inline in `notebooks/train_stgcn.ipynb` cells 5/7/11/13 and need extracting before stages 10-11 can import them.
+2. **Stage 9 (multi-channel STGCN)**: set the first block's `c_in` from `contract.rung_channels(rung)` - it is 1, 2, 4, 5 or 11 depending on the ablation rung, NOT a fixed number. Stages 2-7 now produce the tensor, so this is unblocked. NOTE `src/models/` does not exist on any branch: the model and training loop live inline in `notebooks/train_stgcn.ipynb` cells 5/7/11/13 and need extracting before stages 10-11 can import them.
 3. **Stage 10 (predict.py)**: Uniform prediction I/O so eval treats all models interchangeably
 
 ## How to update this file

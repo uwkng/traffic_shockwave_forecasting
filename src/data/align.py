@@ -204,8 +204,22 @@ def align_weather(cfg: dict, time_index: pd.DatetimeIndex):
         "rows_a_positional_join_would_have_produced": int(naive_positional),
         "join": "by label on speed.csv's column timestamps; no resampling",
         "source": "ASOS SJC + NUQ, IDW-merged by acquire.build_weather()",
-        "precip_total_mm": round(float(feat["precipitation"].sum()), 1),
+        # NO total here, deliberately. p01i is a BACKWARD 1-hour accumulation
+        # and acquire._parse_asos forward-fills it across the twelve 5-min steps
+        # that follow, so every hourly reading appears twelve times and summing
+        # this column returns 12x the rainfall. (It reported 5980.6 mm for the
+        # period; the real figure is ~500 mm, and 2017 was one of the wettest
+        # first halves on record in San Jose.) For an actual total, read the
+        # p01i column of the raw per-station files, where each observation
+        # appears once: SJC 597.3 mm, NUQ 630.8 mm over 2017-01-01..06-30.
+        "precip_column_is_not_summable": (
+            "p01i is a backward 1-hour accumulation, forward-filled to 5 min; "
+            "each hourly reading repeats 12 times. Sum the raw asos_*.csv p01i "
+            "column instead."),
+        # Counts and comparisons ARE valid on this column: repetition changes how
+        # many steps carry a value, not whether a given step is above threshold.
         "wet_steps": int((feat["precipitation"] > 0).sum()),
+        "max_1h_accum_mm": round(float(feat["precipitation"].max()), 3),
         "temperature_c_range": [round(float(feat["temperature"].min()), 2),
                                 round(float(feat["temperature"].max()), 2)],
     }
@@ -397,8 +411,10 @@ def main() -> int:
           f"{wmeta['rows_a_positional_join_would_have_produced']} rows -> silent 1-h shift)")
     print(f"  source        : {wmeta['source']}")
     print(f"  join          : {wmeta['join']}")
-    print(f"  precipitation : {wmeta['precip_total_mm']} mm total, "
-          f"{wmeta['wet_steps']:,} wet steps")
+    print(f"  precipitation : {wmeta['wet_steps']:,} wet steps, "
+          f"max 1-h accumulation {wmeta['max_1h_accum_mm']} mm")
+    print(f"                  (no total: the column is a forward-filled 1-h "
+          f"accumulation, so it is not summable)")
     print(f"  temperature   : {wmeta['temperature_c_range'][0]} .. "
           f"{wmeta['temperature_c_range'][1]} degC")
 
