@@ -175,6 +175,18 @@ sweep that chose them.
   0 stays comparable to the published single-channel numbers. Occupancy remains
   an INPUT channel, where it is the single most valuable one.
 
+- **Known-future covariates stay OFF.** `loader.build_loaders(future_covariates=)`
+  and `contract.KNOWN_FUTURE_CHANNELS` are implemented and default to False.
+  Turning them on would train the model on OBSERVED future weather and serve it
+  a nowcast - a train/serve mismatch, not just an optimistic number - and no
+  2017 forecast archive exists to train on instead. Schedule and calendar have
+  no forecast error, but their share of the benefit is small. State the cost in
+  the paper: within the reported windows, 23.7% of adverse-weather samples and
+  15.2% of event samples have the exogenous signal absent from the entire
+  60-min input window. Do NOT justify this with "shockwaves are too brief" -
+  measured, the deceleration wave is brief (median 15 min) but the congestion
+  it causes is not (median 60 min, 59.6% of onsets outlast a 45-min horizon).
+
 ## Our STGCN vs the official code (VeritasYin/STGCN_IJCAI-18)
 
 Line-by-line diff done 2026-09-04 against `models/layers.py`, `base_model.py`,
