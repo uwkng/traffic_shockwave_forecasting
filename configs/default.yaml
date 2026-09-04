@@ -24,6 +24,19 @@ data:
   timezone: America/Los_Angeles
 
   freq_min: 5              # target sampling interval (minutes)
+
+  # Asserted by align.py. 181 days x 288 = 52,128, but the file has 52,116:
+  # 2017-03-12 02:00..02:55 does not exist (DST). See contract.DST_GAP.
+  expected_timesteps: 52116
+  expected_nodes: 325
+  adjacency_pkl: data/sensor_graph/adj_mx_bay.pkl
+
+  # relative to pems_bay_dir. Rows are SENSORS, columns are TIMESTAMPS, and
+  # speed.csv's column labels are the authoritative time axis for the project.
+  speed_csv: data/traffic_data/speed.csv
+  occupancy_csv: data/traffic_data/occupancy.csv
+  sensor_ids_txt: data/sensor_graph/graph_sensor_ids.txt
+  distances_csv: data/sensor_graph/distances_bay_2017.csv
   date_range:
     start: "2017-01-01"
     end: "2017-06-30"
@@ -162,6 +175,62 @@ events:
     music_festival:   {attendance: 18000, duration_min: 660, start: "12:00"}
     amateur_sport:    {attendance: 10000, duration_min: 180, start: "19:00"}
     other:            {attendance: 10000, duration_min: 150, start: "19:00"}
+
+features:
+  event_load:
+    tau_km: 4.0             # exp(-d/tau) spatial decay
+    attendance_ref: 20000   # normaliser, so a full arena is ~1.0
+    distance: haversine     # haversine | road
+    # How long an event is treated as affecting traffic. This shapes the INPUT
+    # channels. Keep it separate from eval.event_phases, which slices the
+    # REPORTED metrics: the input span is deliberately wide (arrivals through
+    # egress tail) while the reported window is the egress hour alone, because
+    # measured, the whole 5.5-hour span dilutes the -1.2 mph egress dip to
+    # +0.41 mph.
+    lead_min: -90           # arrivals begin
+    lag_min: 90             # egress tail
+    # Applied to event_load ONLY, never to event_active_decay - see
+    # contract.EVENT_LOAD_MIN_ATTENDANCE for the measurements.
+    min_attendance: 15000
+  time_of_day: fraction     # fraction | sincos (sincos => 12 channels)
+
+split:
+  mode: rolling             # single | rolling
+  embargo_steps: 24         # = input(12) + horizon(12); dropped at each boundary
+  single:                   # ONLY for reproducing published vanilla-STGCN numbers.
+    train: 0.70             # Its test period holds ZERO adverse-weather timesteps,
+    val: 0.10               # so no weather result may be reported on it.
+    test: 0.20
+  rolling:
+    # See contract.ROLLING for why these numbers. Short version: fold count does
+    # not change how much signal reaches test, only how it is partitioned, and
+    # the unit that matters is the episode (90 rain spells, 60 egress hours,
+    # 4 holidays in the period). 28-day blocks give a median of 10 rain spells
+    # per fold; 14-day blocks give 4. min_train 28 rather than 42 puts 51 of the
+    # 90 rain spells into test instead of 37, because January is the wettest
+    # month and a 42-day warm-up locks most of it away.
+    min_train_days: 28
+    test_block_days: 28
+    val_days: 7
+    n_folds: 6
+
+eval:
+  horizons_min: [15, 30, 60]
+  # Thresholds and the measurements behind them live in src/eval/windows.py.
+  event_phases:             # minutes; egress is relative to end_time
+    ingress: [-90, 0]
+    in_play: [0, null]
+    egress:  [0, 60]        # the shockwave; measured -1.22 mph for NHL
+  weather:
+    adverse_mm: 0.51        # p75 of wet steps; -2.22 mph. TWO tiers, not three.
+    lag_steps: 6
+  min_attendance: 15000
+  distance_bins_km: [0, 1, 2, 5, 10, 20]
+  onset:
+    speed_mph: 45.0
+    persist_steps: 3
+  effective_n_unit: episode   # never node-timestep; see contract.py
+  paired_test: wilcoxon
 
 model:
   stgcn:
