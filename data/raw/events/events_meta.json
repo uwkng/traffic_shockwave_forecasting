@@ -1,6 +1,6 @@
 {
   "generated_by": "src/data/fetch_events.py",
-  "generated_on_utc": "2026-09-04 08:55",
+  "generated_on_utc": "2026-09-04 11:50",
   "config": "configs/default.yaml",
   "study_period": {
     "start": "2017-01-01",
@@ -164,56 +164,64 @@
         "query": "SAP Center, San Jose, California",
         "osm_lat": 37.33286,
         "osm_lon": -121.901225,
-        "delta_m": 26.7
+        "delta_m": 26.7,
+        "wikidata_delta_m": 13.1
       },
       "Avaya Stadium": {
         "status": "ok",
         "query": "PayPal Park, San Jose, California",
         "osm_lat": 37.351309,
         "osm_lon": -121.924672,
-        "delta_m": 52.1
+        "delta_m": 52.1,
+        "wikidata_delta_m": 36.7
       },
       "Levi's Stadium": {
         "status": "ok",
         "query": "Levi's Stadium, Santa Clara, California",
         "osm_lat": 37.402987,
         "osm_lon": -121.969649,
-        "delta_m": 41.2
+        "delta_m": 41.2,
+        "wikidata_delta_m": 54.2
       },
       "Shoreline Amphitheatre": {
         "status": "ok",
         "query": "Shoreline Amphitheatre, Mountain View, California",
         "osm_lat": 37.426862,
         "osm_lon": -122.080607,
-        "delta_m": 18.0
+        "delta_m": 18.0,
+        "wikidata_delta_m": 12.4
       },
       "Stanford Stadium": {
         "status": "ok",
         "query": "Stanford Stadium, Stanford, California",
         "osm_lat": 37.434526,
         "osm_lon": -122.161987,
-        "delta_m": 96.3
+        "delta_m": 96.3,
+        "wikidata_delta_m": 25.4
       },
       "Oracle Arena": {
         "status": "ok",
         "query": "Oakland Arena, Oakland, California",
         "osm_lat": 37.750273,
         "osm_lon": -122.202932,
-        "delta_m": 15.0
+        "delta_m": 15.0,
+        "wikidata_delta_m": 4.6
       },
       "Oakland Coliseum": {
         "status": "ok",
         "query": "Oakland Coliseum, Oakland, California",
         "osm_lat": 37.751633,
         "osm_lon": -122.200475,
-        "delta_m": 11.6
+        "delta_m": 11.6,
+        "wikidata_delta_m": 8.4
       },
       "AT&T Park": {
         "status": "ok",
         "query": "Oracle Park, San Francisco, California",
         "osm_lat": 37.778606,
         "osm_lon": -122.389472,
-        "delta_m": 15.1
+        "delta_m": 15.1,
+        "wikidata_delta_m": 32.3
       }
     }
   },

@@ -152,6 +152,26 @@ OSM_QUERY = {
 }
 OSM_TOLERANCE_KM = 0.5      # a stadium footprint is ~200 m across; 500 m is generous
 
+# A SECOND, INDEPENDENT source for the same coordinates. Nominatim and Wikidata
+# are separate projects with separate editors, so agreement between them is real
+# corroboration; re-querying Nominatim twice is not. Checked 2026-09-04, the two
+# never disagree by more than 54 m on any venue we actually use.
+WIKIDATA_QUERY = {
+    "SAP Center":             "SAP Center",
+    "Avaya Stadium":          "PayPal Park",
+    "Levi's Stadium":         "Levi's Stadium",
+    "Shoreline Amphitheatre": "Shoreline Amphitheatre",
+    "Stanford Stadium":       "Stanford Stadium",
+    "Oracle Arena":           "Oakland Arena",
+    "Oakland Coliseum":       "Oakland Coliseum",
+    "AT&T Park":              "Oracle Park",
+}
+# A name search returns namesakes (there is more than one "Shoreline
+# Amphitheatre"). Only accept a hit that is already within this radius of the
+# typed coordinate: it makes the check a CORROBORATION of a nearby point, never
+# a search that could silently substitute a different building.
+WIKIDATA_MAX_CANDIDATE_KM = 5.0
+
 # Named all-day festivals whose titles carry no "festival" keyword.
 MUSIC_FESTIVAL_KEYWORDS = ("bfd", "id10t", "warped tour", "audiotistic",
                            "beyond wonderland", "rock the bells", "lollapalooza",
@@ -251,6 +271,51 @@ def _osm_get(query: str, cache: pathlib.Path, cfg: dict) -> bytes | None:
     return None
 
 
+def _wikidata_coords(label: str, near: tuple[float, float],
+                     cache: pathlib.Path, cfg: dict) -> tuple[float, float] | None:
+    """Look up `label` on Wikidata and return its P625 coordinate, or None.
+
+    Cached to disk like every other fetch, so reruns are offline. Candidates
+    further than WIKIDATA_MAX_CANDIDATE_KM from `near` are rejected rather than
+    returned, so a namesake in another state cannot pass as agreement.
+    """
+    if cache.exists():
+        try:
+            doc = json.loads(cache.read_text(encoding="utf-8"))
+            return (doc["lat"], doc["lon"]) if doc else None
+        except (json.JSONDecodeError, KeyError, TypeError):
+            pass
+    ev = cfg["events"]
+    hdr = {"User-Agent": "traffic-shockwave-forecasting/1.0 "
+                         "(course project; venue coordinate check)"}
+    try:
+        hits = requests.get(
+            "https://www.wikidata.org/w/api.php",
+            params={"action": "wbsearchentities", "format": "json",
+                    "language": "en", "limit": 5, "search": label},
+            headers=hdr, timeout=ev["request_timeout_s"]).json().get("search", [])
+        for h in hits:
+            ent = requests.get(
+                f"https://www.wikidata.org/wiki/Special:EntityData/{h['id']}.json",
+                headers=hdr, timeout=ev["request_timeout_s"]
+            ).json()["entities"][h["id"]]
+            claim = ent.get("claims", {}).get("P625")
+            if not claim:
+                continue
+            val = claim[0]["mainsnak"]["datavalue"]["value"]
+            lat, lon = float(val["latitude"]), float(val["longitude"])
+            if haversine_km(near[0], near[1], lat, lon) <= WIKIDATA_MAX_CANDIDATE_KM:
+                cache.parent.mkdir(parents=True, exist_ok=True)
+                cache.write_text(json.dumps({"qid": h["id"], "lat": lat, "lon": lon}),
+                                 encoding="utf-8")
+                return lat, lon
+            time.sleep(0.3)
+    except (requests.RequestException, KeyError, ValueError, TypeError):
+        pass
+    print(f"  ! Wikidata lookup failed for {label!r}", file=sys.stderr)
+    return None
+
+
 def verify_venue_coords(cfg: dict) -> dict[str, dict]:
     """Cross-check the hand-entered venue coordinates against OpenStreetMap.
 
@@ -289,6 +354,18 @@ def verify_venue_coords(cfg: dict) -> dict[str, dict]:
                      "osm_lon": round(float(doc[0]["lon"]), 6),
                      "delta_m": round(km * 1000, 1)}
         time.sleep(1.2)                     # Nominatim asks for <=1 req/s
+
+        wd = _wikidata_coords(WIKIDATA_QUERY.get(name, name),
+                              (meta["lat"], meta["lon"]),
+                              cache_dir.parent / "wikidata"
+                              / (re.sub(r"\W+", "_", name) + ".json"), cfg)
+        if wd is None:
+            out[name]["wikidata_delta_m"] = ""
+        else:
+            wkm = haversine_km(meta["lat"], meta["lon"], wd[0], wd[1])
+            out[name]["wikidata_delta_m"] = round(wkm * 1000, 1)
+            if wkm > OSM_TOLERANCE_KM:
+                out[name]["status"] = "MISMATCH"
     return out
 
 
@@ -1141,27 +1218,34 @@ def main() -> int:
     ven = pathlib.Path(cfg["data"]["venues_csv"])
     with open(ven, "w", newline="", encoding="utf-8") as fh:
         w = csv.writer(fh)
+        # ONE row per venue that actually contributes an event to events.csv.
+        # Venues that were screened out (Oracle Arena / Oakland Coliseum / AT&T
+        # Park, 39-49 km away) and venues inside the radius that simply held no
+        # event in the period (Stanford Stadium) are NOT rows here: this file is
+        # the join table for events.csv, and a venue no event points at can only
+        # mislead a reader into thinking it was used. The full screening record -
+        # every candidate, its distance, and why it was kept or dropped - stays
+        # in events_meta.json under "venues", so nothing becomes unauditable.
         w.writerow(["venue_name", "venue_lat", "venue_lon", "capacity",
                     "nearest_sensor_id", "nearest_sensor_km", "nearest_sensor_freeway",
                     "sensors_within_2km", "sensors_within_5km",
-                    "osm_query", "osm_delta_m", "coord_check",
-                    "n_events_in_period", "included", "inclusion_rule", "exclusion_reason"])
+                    "osm_query", "osm_delta_m", "wikidata_delta_m", "coord_check",
+                    "n_events_in_period", "inclusion_rule"])
         n_ev = Counter(r["venue_name"] for r in rows)
         rule = f"nearest sensor <= {ev['max_venue_distance_km']} km (events.max_venue_distance_km)"
         for name, meta in VENUE_META.items():
+            if not n_ev.get(name):
+                continue
             g = geo[name]
-            inc = name in keep
             w.writerow([name, meta["lat"], meta["lon"], meta["capacity"],
                         g["nearest_sensor_id"], f"{g['nearest_sensor_km']:.2f}",
                         g["nearest_sensor_freeway"], g["sensors_within_2km"],
                         g["sensors_within_5km"],
                         osm.get(name, {}).get("query", ""),
                         osm.get(name, {}).get("delta_m", ""),
+                        osm.get(name, {}).get("wikidata_delta_m", ""),
                         osm.get(name, {}).get("status", "unverified"),
-                        n_ev.get(name, 0),
-                        "yes" if inc else "no", rule,
-                        "" if inc else f"nearest sensor {g['nearest_sensor_km']:.2f} km > "
-                                       f"{ev['max_venue_distance_km']} km"])
+                        n_ev.get(name, 0), rule])
     print(f"Wrote {ven}")
 
     # ---- machine-readable provenance summary ------------------------------
