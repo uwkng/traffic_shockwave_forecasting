@@ -216,3 +216,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Stage 1b: fetch_events.py caches every ESPN response and archived page here
+# (~1,100 files). Deleting it only forces a re-download; it is not source data.
+data/raw/events/_cache/
