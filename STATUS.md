@@ -116,6 +116,77 @@ Last updated: 2026-09-04
 
 ## Handover: picking up stages 9-12
 
+### Start here
+
+```bash
+git fetch && git checkout data_pipeline
+pip install numpy pandas pyyaml requests        # pipeline
+pip install torch scipy                         # training only
+
+# first run also clones PEMS-BAY (233 MB) and downloads the weather (~5 min)
+python -m src.data.build_dataset --config configs/default.yaml --acquire
+
+# rebuilds take ~15 s afterwards
+python -m src.data.build_dataset --config configs/default.yaml
+
+# does it look right? prints every rung, every split, and one real sample
+python -m src.models.loader --split single
+```
+
+On macOS, `SSL: CERTIFICATE_VERIFY_FAILED` means your Python has no CA bundle -
+the usual python.org-installer situation. Run
+`open "/Applications/Python 3.x/Install Certificates.command"` once. It is a
+machine problem; do not patch `acquire.py`.
+
+**Nothing large is committed.** The repo is ~4 MB and you rebuild the ~1 GB of
+tensors locally. Do not commit `data/processed/`.
+
+### Where the results are
+
+`data/processed/`, after the build:
+
+| File | Shape | What |
+|---|---|---|
+| `master.npy` | `[52116, 325, 11]` | the whole period, every channel. 745 MB; open with `mmap_mode="r"` |
+| `splits.npz` | 21 arrays | sample indices: `single__train`, `fold00__test`, … |
+| `scalers.json` | — | per-channel mean/std, one set per split |
+| `eval_mask.npy` | `[52116, 325]` | True where speed was observed, not imputed |
+| `adj_mx.npy` | `[325, 325]` | Gaussian-kernel adjacency, threshold 0.1 |
+| `align_meta.json`, `features_meta.json`, `samples_meta.json`, `splits_meta.json` | — | per-stage provenance, human-readable — open these to see what each stage did |
+
+`master.npy` is **not** split. It is the full six months; `splits.npz` indexes
+into it. Same tensor, different bookmarks. A sample id `t` means input
+`master[t:t+12]`, target `master[t+12:t+24, :, 0]` - so one id addresses 24
+timesteps, not one.
+
+### How to use it
+
+```python
+from src.models.loader import build_loaders
+
+loaders, adj, scaler = build_loaders(rung="6_all", split="fold00")
+model = STGCN(c_in=loaders["c_in"], ...)          # c_in is 1, 2, 4, 5 or 11
+
+for X, Y in loaders["train"]:                     # X normalised, Y raw mph
+    ...
+
+pred_mph = scaler.to_mph(pred)                    # ALWAYS before a metric
+mask = loaders["eval_mask"]                       # exclude imputed values
+```
+
+`rung` picks channels, `split` picks bookmarks. Nothing else changes between
+configurations.
+
+The loader owns seven things that are easy to get wrong and that never fail
+loudly - they only move the MAE: which columns, which split's scaler, per
+channel rather than global, passthrough channels, the raw target,
+de-normalisation, the eval mask. Its docstring explains each one. Please do not
+reimplement them.
+
+Without torch installed, `build_loaders` returns the raw `WindowDataset` instead
+of a `DataLoader`, so the historical-average and persistence baselines can share
+the same splits and de-normalisation without a framework.
+
 ### What is blocking
 
 **`src/models/` has no model in it.** The STGCN definition, the training loop
@@ -280,17 +351,62 @@ Record choices here so they don't get lost in chat.
     - 15 min: MAE=1.44±0.00, RMSE=3.06±0.01, MAPE=3.03±0.01%
     - 30 min: MAE=1.93±0.00, RMSE=4.36±0.00, MAPE=4.35±0.02%
     - 60 min: MAE=2.58±0.00, RMSE=5.83±0.01, MAPE=6.25±0.05%
+| 2026-09-05 | Predict speed ONLY; the shockwave label drops the occupancy term | A second occupancy head was proposed so the evaluation could score an occupancy-based label without leaking future ground truth. Measured, the speed-only label reaches every conclusion: rain no-effect either way; events 2.50x z=3.24 against 5.25x z=3.66; upstream propagation 1.71x against 1.88x. The occupancy label is a strict SUBSET of the speed-only one (all 90,220 cells inside the 135,187). So the label lost occupancy instead of the model gaining an output - which keeps rung 0 comparable to every published PEMS-BAY number, all single-channel speed. Occupancy stays the most valuable INPUT channel (+0.220 incremental R2 in commute hours). |
+| 2026-09-05 | Train folds 00-02 only, not all six | Selected on test-block content, known before any model trains: folds 3-5 contain zero rain episodes and zero NHL fixtures while carrying 73% of the compute (114,807 of 157,108 train samples). Stated as a method, not a result. |
+| 2026-09-05 | Do NOT headline "rain x event" compound performance | It occurs 3 times in six months, 18 timesteps, one of them a single step. Reported as a negative result; `weather_commute` (31 episodes, 19 days) is the compound window that exists. |
+| 2026-09-05 | Keep precipitation forward-filled at full magnitude; fix the LABEL, not the data | `p01i` is a backward 1-hour accumulation. Forward-filling is causal (the value at t describes [t-60, t], all past) and shifting the flag later weakens the measured effect, so the current alignment is right. Dividing by 12 changes nothing - the threshold is a percentile of the same series and the model z-scores it. Leaving off-hour steps empty DOES break things: 104 contiguous rain episodes become 213 isolated points and there is no window left to define. Call the column "1-hour accumulation (mm), forward-filled" and never sum it. |
+
+## Session 2026-09-05: eight changes, all measured before and after
+
+Run `python -m scripts.verify` after pulling. It exits non-zero on any failure
+and covers the contract, artifact shapes, channel semantics, staleness, split
+chronology, scaler spans, window contents, the graph operator's spectrum, the
+shockwave label and a loader round-trip on all seven rungs.
+
+| # | Change | Why, measured |
+|---|--------|---------------|
+| 0 | `dist_to_venue` is now DIRECTED ROAD distance (`align.road_distance_km`) | 128 sensor pairs sit within 150 m on opposite carriageways; great-circle put them a median 22 m apart while their speeds correlate 0.115. Egress effect at 5 km went from -0.41 +- 0.23 (t=-1.75, not significant) to -0.89 +- 0.26 (t=-3.37). `tau_km` re-swept: 4.0 still optimal. |
+| 1 | Event channels AND eval windows filter to `confidence == high` | 58 of 95 rows carry a per-type default attendance. By tier the egress shockwave odds ratio is high 5.25x (z=3.66), medium 0.00x, low 1.00x. Dropping 30 of 67 fixtures raises effect size AND significance. |
+| 2 | `scaled_laplacian` symmetrises before `eigsh` | `eigsh` assumes symmetry and does not check; on the directed adjacency it returned lambda_max 1.2670 against a true 1.0013, so the Chebyshev rescaling was 27% off and the spectrum sat in [-1, 0.58]. Now exactly [-1, 1]. Numbers move ~2%; stage 8's reproduction predates the fix. |
+| 3 | Reported horizons 15/30/**45**, not 60 | At 60 min a per-node AR(12) is out by 17.56 mph below 35 mph while scoring 3.20 in aggregate. A 60-min column reports mostly noise where the project claims to be useful. `HORIZON` is unchanged at 12. |
+| 4 | `metrics.shockwave_label` + `metrics.upstream_propagation` | The title needed a metric. Upstream/downstream co-occurrence is 1.53x at 10 min and 1.71x at 15 min - shockwaves travel against the flow and the directed graph sees it. Label is speed-only on purpose (see the decisions log). |
+| 5 | `train.py --loss weighted`, OFF by default | 90.4% of the target is free-flow carrying 63.7% of the absolute error at MAE 2.18; below 45 mph is 6.0% carrying 26.1% at MAE 12-14. Plain L1 optimises the regime we do not care about. Off by default so rung 0 stays comparable to the literature. |
+| 6 | `weather_commute` window; `distance_bins_km` extended to 50 | Rain during an egress hour happens 3 times in six months. Rain during the weekday peak: 31 episodes over 19 days, and it is the most discriminating window in the report (fold00 `0_speed` 4.42 in against 2.39 out at 45 min). The old top bin (10-20 km) left 127 nodes unbinned once distance became road-based. |
+| 7 | `scripts/run_experiments.sh`, `src/eval/figures.py`, `scripts/verify.py` | The queue is ordered so a partial run is still usable and its header records why folds 3-5 are excluded. Figures: space-time diagram (a band leaning backwards IS the shockwave) and the propagation-ratio curve. |
+
+**Rebuild after pulling**: `python -m src.data.build_dataset --config
+configs/default.yaml --force`. The `--force` is not optional - each stage is
+skipped when its outputs merely exist, so a config change alone leaves stale
+arrays on disk. This bit once during this session.
 
 ## Open questions
 
 - [ ] Who fills owner A / B / C roles? Update CLAUDE.md and this file once assigned.
 - [ ] DCRNN: attempt or skip? (CLAUDE.md says optional and time-boxed)
+- [ ] Re-run stage 8 under the fixed Laplacian so the literature comparison and
+      the ablation share one operator? Numbers move ~2%; low priority.
+- [ ] Road distance leaves 54 of 325 nodes unreachable from any venue. Their
+      event decay is 0, which is the right semantics, but `dist_to_venue` caps
+      them at 48.29 km - an arbitrary finite stand-in for "never".
 
 ## Next steps
 
-1. **Stage 2-3 (align.py)**: Resample weather from hourly → 5-min, map events onto the 5-min index, build adjacency matrix, compute dist_to_venue per sensor
-2. **Stage 9 (multi-channel STGCN)**: set the first block's `c_in` from `contract.rung_channels(rung)` - it is 1, 2, 4, 5 or 11 depending on the ablation rung, NOT a fixed number. Stages 2-7 now produce the tensor, so this is unblocked. NOTE `src/models/` does not exist on any branch: the model and training loop live inline in `notebooks/train_stgcn.ipynb` cells 5/7/11/13 and need extracting before stages 10-11 can import them.
-3. **Stage 10 (predict.py)**: Uniform prediction I/O so eval treats all models interchangeably
+Stages 2-12 are written and pass `python -m scripts.verify` (90 checks). What
+remains is compute and writing.
+
+1. **Run the queue on a GPU.** `DEV=cuda bash scripts/run_experiments.sh`.
+   Batch 0 is a 3-epoch timing probe on the widest rung and the largest fold -
+   read its seconds/epoch before deciding how far down the list to go, because
+   every runtime figure in this repo is extrapolated from an A100 number quoted
+   in a notebook, not measured on the card you are holding.
+2. **Build the tables.** `python -m src.eval.report --split fold0{0,1,2}`.
+3. **Draw the figures.** `python -m src.eval.figures --date <a rainy commute
+   day in the fold's test block> --freeway 101-N --predictions <npz files>`.
+4. **Write the negative results up.** Three of them are findings, not gaps:
+   compound rain-and-event exposure does not exist here (3 episodes / 18
+   timesteps); rain does not cause breakdowns, it uniformly reduces capacity;
+   and 58 of 95 fixtures carry a per-type default attendance, so an attendance
+   threshold filters our own defaults rather than the world.
 
 ## How to update this file
 

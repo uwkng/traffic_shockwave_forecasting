@@ -88,8 +88,36 @@ EGRESS_MIN = (0, 60)        # minutes after end_time
 MIN_ATTENDANCE = 15_000
 
 
+# Provenance floor. events.csv marks 37 rows `high` (ESPN: real start time,
+# ANNOUNCED attendance), 46 `medium` and 12 `low`. 42 of the 46 medium rows and
+# all 12 low rows carry `attendance_kind = type_default_estimate` - a constant we
+# assigned per event type - so applying MIN_ATTENDANCE to them filters our own
+# defaults by construction, not the world. The medium tier is dominated by 24
+# AHL fixtures stamped with a >=15,000 default; minor-league hockey draws a few
+# thousand.
+#
+# Measured on the egress hour against matched controls (same weekday and clock,
+# +-7/14 days, no event), sensors within 5 km:
+#     high    37 fixtures   -0.63 +- 0.26 mph   14/36 vs  4/54 = 5.25x, z=3.66
+#     medium  19            +0.18 +- 0.11        0/19 vs  5/39 = 0.00x, z=-1.63
+#     low     11            -0.06 +- 0.12        1/11 vs  1/11 = 1.00x, z=0.00
+#     all     67            -0.31 +- 0.15       15/66 vs 10/104 = 2.36x, z=2.35
+# Dropping 30 of 67 fixtures RAISES both the effect size and the significance:
+# the excluded rows are noise. Keep this in step with
+# configs/default.yaml features.event_load.min_confidence, which applies the
+# same floor to the input channels.
+#
+# What "high" does NOT cover: end_time_is_estimated is 1 for all 95 rows
+# (duration_source is nominal_by_type throughout), so the egress window itself
+# is an estimate even here. High means the date, start time and attendance are
+# sourced.
+MIN_CONFIDENCE = "high"
+_CONF_RANK = {"low": 0, "medium": 1, "high": 2}
+
+
 def event_windows(events_csv, time_index, *, min_attendance=MIN_ATTENDANCE,
-                  egress_min=EGRESS_MIN, venues=None):
+                  egress_min=EGRESS_MIN, venues=None,
+                  min_confidence=MIN_CONFIDENCE):
     """Boolean mask, True during the egress hour of a qualifying event.
 
     Returns the mask and the DataFrame of events that produced it, so a caller
@@ -97,6 +125,13 @@ def event_windows(events_csv, time_index, *, min_attendance=MIN_ATTENDANCE,
     """
     ev = pd.read_csv(events_csv, parse_dates=["start_time", "end_time"])
     sub = ev[ev["expected_attendance"] >= min_attendance]
+    if min_confidence is not None and "confidence" in sub.columns:
+        floor = _CONF_RANK[str(min_confidence).lower()]
+        rank = sub["confidence"].str.lower().map(_CONF_RANK)
+        assert rank.notna().all(), (
+            f"unknown confidence values: "
+            f"{sorted(set(sub['confidence']) - set(_CONF_RANK))}")
+        sub = sub[rank >= floor]
     if venues is not None:
         sub = sub[sub["venue_name"].isin(venues)]
     idx = pd.DatetimeIndex(time_index)
@@ -132,6 +167,41 @@ US_HOLIDAYS_2017_H1 = {
     "2017-02-20": "Presidents' Day",
     "2017-05-29": "Memorial Day",
 }
+
+
+# The compound window that actually exists. "Adverse weather during a scheduled
+# event" is the natural thing to want and there is no such thing here: rain
+# overlaps an egress hour 3 times in six months, 18 timesteps in total, one of
+# them a single step. Any benchmark headlining compound event-and-weather
+# performance on PEMS-BAY 2017 H1 is reporting noise.
+#
+# Rain during the weekday commute peak is a different story - 34 episodes across
+# 19 distinct days, 500 timesteps - and it is where the shockwaves are: 88.4% of
+# commute-peak timesteps carry at least one, against 18.2% off-peak. Rain in the
+# peak costs -3.04 mph against -2.22 mph over all hours.
+#
+# Note what this window is NOT evidence for. Controlling for time of day, rain
+# does not change how OFTEN breakdowns happen (91.8% in rain against 93.1% dry)
+# nor how big they are (6.25 sensors involved against 6.46). Rain is a uniform
+# capacity reduction; the peak is when the network has no slack to absorb it.
+COMMUTE_HOURS = ((7, 10), (15, 19))     # local wall-clock, weekdays only
+
+
+def commute_mask(time_index):
+    """Boolean mask, True in the weekday morning or evening peak."""
+    idx = pd.DatetimeIndex(time_index)
+    h = idx.hour
+    peak = np.zeros(len(idx), dtype=bool)
+    for lo, hi in COMMUTE_HOURS:
+        peak |= (h >= lo) & (h < hi)
+    return peak & (idx.dayofweek < 5)
+
+
+def weather_commute_windows(weather_csv, time_index,
+                            threshold_mm=ADVERSE_PRECIP_MM):
+    """Adverse precipitation AND the weekday commute peak."""
+    return (weather_windows(weather_csv, time_index, threshold_mm)
+            & commute_mask(time_index))
 
 
 def holiday_mask(time_index):
