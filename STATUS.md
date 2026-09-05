@@ -375,6 +375,24 @@ shockwave label and a loader round-trip on all seven rungs.
 | 6 | `weather_commute` window; `distance_bins_km` extended to 50 | Rain during an egress hour happens 3 times in six months. Rain during the weekday peak: 31 episodes over 19 days, and it is the most discriminating window in the report (fold00 `0_speed` 4.42 in against 2.39 out at 45 min). The old top bin (10-20 km) left 127 nodes unbinned once distance became road-based. |
 | 7 | `scripts/run_experiments.sh`, `src/eval/figures.py`, `scripts/verify.py` | The queue is ordered so a partial run is still usable and its header records why folds 3-5 are excluded. Figures: space-time diagram (a band leaning backwards IS the shockwave) and the propagation-ratio curve. |
 
+**Shipping this to a GPU box.** Either clone it, or send the zip built with:
+
+```bash
+cd ..   # the directory ABOVE the repo
+zip -qr tsf_gpu.zip traffic_shockwave_forecasting \
+  -x '*/data/processed/*' '*/data/raw/events/_cache/*' '*/__pycache__/*' \
+     '*/data/raw/augmented-pems-bay/.git/*' '*/checkpoints/*.pt' \
+     '*/notes_local/*' '*.DS_Store'
+```
+
+52 MB. Note the exclusions: `data/processed/` is 1.0 GB and rebuilds in ~15 s,
+`events/_cache/` is 61 MB of scraped HTML, and `augmented-pems-bay/.git` is a
+47 MB nested clone. OUR `.git` is kept deliberately - 4.3 MB, and without it
+results come back with no commit to attribute them to. Verified by extracting
+elsewhere, rebuilding and running `scripts.verify`: 14.9 s, all checks pass,
+no network needed. On the box: `bash scripts/setup_gpu_box.sh` detects that the
+raw data is already there and skips the clone.
+
 **Rebuild after pulling**: `python -m src.data.build_dataset --config
 configs/default.yaml --force`. The `--force` is not optional - each stage is
 skipped when its outputs merely exist, so a config change alone leaves stale
