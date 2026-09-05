@@ -42,10 +42,38 @@ it looks like nothing is happening. Intersecting it with the weekday commute
 peak gives 1.75-2.93x. Six independent measurements (3 folds x 2 baselines)
 agree on the ordering, so this is a property of the data, not of one baseline.
 
-**The trap, and it belongs in the text.** `event_egress` reads 0.48-0.74, i.e.
-*easier* than its complement, because egress happens at 21:30-23:00 when the
-network is empty. In-window and out-of-window difficulty are not comparable.
-Only model-against-model within one window is.
+**The trap, and it belongs in the text.** An in-window / out-of-window ratio is
+ALWAYS confounded, because a window is not a random sample of the test set - it
+sits at a particular hour, season and place. Two of ours show it:
+
+* `event_egress` reads 0.48-0.74, i.e. *easier* than its complement. Read
+  naively that says fixtures make traffic more predictable. They do not: egress
+  falls at 21:30-23:00, when the network is empty.
+* `weather_commute` reads 1.75-2.93, which invites "rain triples the error".
+  Decomposed 2x2 below, most of it is the clock.
+
+**Table 1b — the same numbers with time of day controlled.** Persistence,
+45-min MAE (mph), on the test samples of each fold:
+
+| fold | peak dry | peak RAIN | off-peak dry | off-peak RAIN | rain adds, at peak |
+|---|---:|---:|---:|---:|---:|
+| 00 | 4.881 | 4.230 | 1.912 | 2.596 | **-0.651** |
+| 01 | 5.316 | 6.185 | 2.084 | 2.601 | +0.869 |
+| 02 | 4.885 | 6.040 | 1.897 | 2.266 | +1.155 |
+
+Time of day ALONE, on dry samples only: 4.881/1.912 = **2.55x**,
+5.316/2.084 = **2.55x**, 4.885/1.897 = **2.58x**. Three folds agreeing to two
+decimals. Rain then adds -0.65 to +1.16 mph on top, and its sign is not even
+consistent across folds at peak.
+
+So: report the 2x2, not the ratio. The window is still the right place to
+LOOK - it is where the errors are - but the ratio does not attribute them.
+The only clean comparison is model-against-model inside one cell of the 2x2.
+
+This is the same confound that made an earlier reading of the event effect
+wrong: "shockwave rate 9.4% during egress against 33.3% elsewhere" mixed the
+morning and evening commute into the comparison set. Restricted to 21:00-23:00
+it is 7.5% against 3.9% - egress roughly doubles it.
 
 ## Table 2 — Where the shockwaves are
 

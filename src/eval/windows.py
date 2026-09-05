@@ -184,6 +184,25 @@ US_HOLIDAYS_2017_H1 = {
 # does not change how OFTEN breakdowns happen (91.8% in rain against 93.1% dry)
 # nor how big they are (6.25 sensors involved against 6.46). Rain is a uniform
 # capacity reduction; the peak is when the network has no slack to absorb it.
+# HOW TO READ A WINDOWED METRIC. Never quote "MAE inside / MAE outside" as
+# evidence that the window's phenomenon is hard to predict. A window is not a
+# random sample of the test set - it sits at a particular hour, season and
+# place, and the ratio absorbs all of that. Measured with persistence at 45 min:
+#
+#     fold   peak dry  peak RAIN  off-peak dry  off-peak RAIN
+#     00        4.881      4.230         1.912          2.596
+#     01        5.316      6.185         2.084          2.601
+#     02        4.885      6.040         1.897          2.266
+#
+# Time of day ALONE, dry samples only, is 2.55x / 2.55x / 2.58x - three folds to
+# two decimals. Rain then adds -0.65 to +1.16 mph on top and its sign is not
+# consistent across folds. So the 1.75-2.93x that `weather_commute` shows
+# against its complement is mostly the clock. `event_egress` makes the same
+# point from the other side: it reads 0.48-0.74, i.e. EASIER than outside,
+# because egress falls at 21:30-23:00 on an empty network.
+#
+# Report the 2x2. The window is still the right place to look - it is where the
+# errors are - but only model-against-model inside one cell attributes them.
 COMMUTE_HOURS = ((7, 10), (15, 19))     # local wall-clock, weekdays only
 
 
