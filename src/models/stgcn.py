@@ -71,54 +71,6 @@ def cheb_polynomials(scaled_lap: np.ndarray, K: int) -> list[torch.Tensor]:
     return [torch.from_numpy(p) for p in polys]
 
 
-def diffusion_supports(adj: np.ndarray, K: int) -> list[torch.Tensor]:
-    """Dual random-walk supports on the DIRECTED graph: [I, Pf, Pf^2, Pb, Pb^2].
-
-    Chebyshev needs a symmetric Laplacian, so `scaled_laplacian` symmetrises and
-    the operator becomes direction-blind. That is a structural problem for this
-    project rather than a detail: a shockwave IS a low-speed band travelling
-    UPSTREAM, and measured on the observed series it goes upstream 1.53x more
-    often than downstream at 10 min and 1.71x at 15 min. A symmetric operator
-    cannot represent that asymmetry at all - it can only see "a neighbour".
-
-    This is the DCRNN / Graph WaveNet answer (Li et al. 2018, Wu et al. 2019):
-    replace the polynomial basis with powers of the forward and backward random
-    walks, Pf = D_o^-1 A and Pb = D_i^-1 A^T, kept separate so the model learns
-    a different weight for the upstream and downstream directions.
-
-    Nothing else changes. `ChebConv` computes sum_k support_k @ x @ W_k and does
-    not care what the supports are; only their COUNT changes, from K to
-    1 + 2(K-1) - five instead of three at K=3, so the graph-convolution weight
-    grows by two thirds and the model from 117k to ~150k parameters.
-
-    adj must be the RAW directed matrix (data/processed/adj_mx.npy), not the
-    symmetrised one.
-    """
-    n = adj.shape[0]
-    a = adj.astype(np.float64)
-    out_deg = a.sum(axis=1, keepdims=True)
-    in_deg = a.T.sum(axis=1, keepdims=True)
-    p_f = np.divide(a, out_deg, out=np.zeros_like(a), where=out_deg > 0)
-    p_b = np.divide(a.T, in_deg, out=np.zeros_like(a), where=in_deg > 0)
-    supports = [np.eye(n)]
-    for p in (p_f, p_b):
-        m = np.eye(n)
-        for _ in range(K - 1):
-            m = m @ p
-            supports.append(m)
-    return [torch.from_numpy(s.astype(np.float32)) for s in supports]
-
-
-def graph_supports(adj: np.ndarray, cfg_stgcn: dict) -> list[torch.Tensor]:
-    """The graph operator named by `model.stgcn.graph_conv`."""
-    kind = str(cfg_stgcn.get("graph_conv", "chebyshev")).lower()
-    if kind == "chebyshev":
-        return cheb_polynomials(scaled_laplacian(adj), cfg_stgcn["Ks"])
-    if kind == "diffusion":
-        return diffusion_supports(adj, cfg_stgcn["Ks"])
-    raise ValueError(f"unknown model.stgcn.graph_conv: {kind!r}")
-
-
 # ---------------------------------------------------------------------------
 # layers
 
@@ -227,9 +179,7 @@ def build_model(adj: np.ndarray, c_in: int, cfg: dict,
                 input_window: int, horizon: int, device="cpu") -> STGCN:
     """Assemble the model from an adjacency matrix and `cfg["model"]["stgcn"]`."""
     m = cfg["model"]["stgcn"]
-    supports = graph_supports(adj, m)
-    # Ks is the SUPPORT COUNT for the layer, not the config's Ks: diffusion
-    # produces 1 + 2(Ks-1) supports where Chebyshev produces Ks.
-    model = STGCN(supports, c_in, input_window, horizon,
-                  len(supports), m["Kt"], m["blocks"], m["dropout"])
+    polys = cheb_polynomials(scaled_laplacian(adj), m["Ks"])
+    model = STGCN(polys, c_in, input_window, horizon,
+                  m["Ks"], m["Kt"], m["blocks"], m["dropout"])
     return model.to(device)

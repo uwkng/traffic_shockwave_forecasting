@@ -154,10 +154,8 @@ def train_one(rung, split, seed, cfg, device, epochs=None, quiet=False,
     assert loss_name in ("l1", "weighted"), f"unknown --loss {loss_name!r}"
     crit = nn.L1Loss() if loss_name == "l1" else congestion_weighted_l1
 
-    gc = cfg["model"]["stgcn"].get("graph_conv", "chebyshev")
     tag = (f"{rung}__{split}__seed{seed}"
-           + ("" if loss_name == "l1" else "__weighted")
-           + ("" if gc == "chebyshev" else f"__{gc}"))
+           + ("" if loss_name == "l1" else "__weighted"))
     CKPT.mkdir(exist_ok=True)
     ckpt = CKPT / f"{tag}.pt"
     if not quiet:
@@ -210,7 +208,6 @@ def train_one(rung, split, seed, cfg, device, epochs=None, quiet=False,
         sample_ids=loaders["datasets"]["test"].ids)
 
     report = {"rung": rung, "split": split, "seed": seed, "loss": loss_name,
-              "graph_conv": gc,
               "c_in": loaders["c_in"],
               "channels": loaders["channels"], "params": n_par,
               "future_covariates": loaders["future_covariates"],
@@ -230,11 +227,6 @@ def main() -> int:
                     help="run fold00..fold05 instead of --split")
     ap.add_argument("--seeds", type=int, default=None, help="default: contract.N_SEEDS")
     ap.add_argument("--epochs", type=int, default=None)
-    ap.add_argument("--graph-conv", choices=["chebyshev", "diffusion"],
-                    default=None,
-                    help="override model.stgcn.graph_conv. `diffusion` uses the "
-                         "directed dual random walk instead of the symmetric "
-                         "Chebyshev basis - see configs/default.yaml.")
     ap.add_argument("--loss", choices=["l1", "weighted"], default="l1",
                     help="weighted = congestion-weighted L1; see the module "
                          "docstring. Off by default so rung 0 stays comparable "
@@ -254,11 +246,7 @@ def main() -> int:
               "  episodes, so a weather-conditioned model cannot differ from a\n"
               "  traffic-only one on it. Use --all-folds for any weather result.")
 
-    if args.graph_conv:
-        cfg["model"]["stgcn"]["graph_conv"] = args.graph_conv
-    gc = cfg["model"]["stgcn"].get("graph_conv", "chebyshev")
-    print(f"=== stage 10: train {args.rung} on {', '.join(splits)} "
-          f"[{gc}] ===\n")
+    print(f"=== stage 10: train {args.rung} on {', '.join(splits)} ===\n")
     results = []
     for split in splits:
         for i in range(n_seeds):
