@@ -403,7 +403,11 @@ remains is compute and writing.
 2. **Build the tables.** `python -m src.eval.report --split fold0{0,1,2}`.
 3. **Draw the figures.** `python -m src.eval.figures --date <a rainy commute
    day in the fold's test block> --freeway 101-N --predictions <npz files>`.
-4. **Write the negative results up.** Three of them are findings, not gaps:
+4. **`notes/paper_tables.md` is the writing plan.** Tables 1-7 are filled in
+   and need no GPU: they come from data statistics and from two parameter-free
+   baselines. Tables 8-11 and Figure 1 are placeholders the run fills in. Start
+   writing from Table 1 today rather than waiting for the queue.
+5. **Write the negative results up.** Three of them are findings, not gaps:
    compound rain-and-event exposure does not exist here (3 episodes / 18
    timesteps); rain does not cause breakdowns, it uniformly reduces capacity;
    and 58 of 95 fixtures carry a per-type default attendance, so an attendance
