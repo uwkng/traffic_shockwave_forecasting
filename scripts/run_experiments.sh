@@ -65,5 +65,9 @@ echo "###### batch 6: congestion-weighted loss as an ablation dimension ######"
 run 6_all           3 --loss weighted
 run 0_speed         3 --loss weighted
 
-echo "###### done. build the tables: ######"
-for f in $FOLDS; do echo "  $PY -m src.eval.report --split $f"; done
+echo "###### done. collecting everything into one bundle ######"
+# Do NOT hand-roll the tar. collect_results.sh regenerates the reports and
+# figures first and records the commit, the GPU, the torch version and every
+# *_meta.json, so the bundle can still be defended when nobody remembers which
+# config produced it.
+FULL=${FULL:-0} PY=$PY FOLDS="$FOLDS" bash scripts/collect_results.sh
