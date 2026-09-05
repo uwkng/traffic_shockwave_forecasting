@@ -29,8 +29,17 @@ echo "  (install torch separately, matched to the box's CUDA:"
 echo "   https://pytorch.org/get-started/locally/ )"
 
 echo
-echo "== 3. data: clone PEMS-BAY and build stages 1-7 (~5 min, then ~20 s) =="
-python3 -m src.data.build_dataset --config configs/default.yaml --acquire --force
+echo "== 3. data: build stages 1-7 =="
+# Two ways this box can have arrived: a git clone (code only - PEMS-BAY has to
+# be fetched, ~233 MB, needs network) or the transfer zip (raw data already
+# present, needs nothing). Detect it rather than asking.
+if [ -f data/raw/augmented-pems-bay/data/traffic_data/speed.csv ]; then
+  echo "  PEMS-BAY already present - offline rebuild, ~20 s"
+  python3 -m src.data.build_dataset --config configs/default.yaml --force
+else
+  echo "  PEMS-BAY missing - cloning (~233 MB) then building, ~5 min"
+  python3 -m src.data.build_dataset --config configs/default.yaml --acquire --force
+fi
 
 echo
 echo "== 4. verify: 90 checks, exits non-zero on any failure =="
