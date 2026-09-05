@@ -1,0 +1,394 @@
+{
+  "generated_by": "src/data/fetch_events.py",
+  "generated_on_utc": "2026-09-04 11:50",
+  "config": "configs/default.yaml",
+  "study_period": {
+    "start": "2017-01-01",
+    "end": "2017-06-30"
+  },
+  "timezone": {
+    "value": "America/Los_Angeles",
+    "note": "US PACIFIC, not US Eastern. start_time/end_time are LOCAL wall-clock, the same convention as PEMS-BAY's speed.csv columns, so events join to traffic by label with no shift. start_time_utc is the same instant in UTC, for verification only. 2017-03-12 02:00-02:59 does not exist locally (DST)."
+  },
+  "sources": {
+    "espn": "site.api.espn.com scoreboard, one request per day per league; gives the exact UTC start and the announced attendance",
+    "venue_calendars": "Wayback Machine snapshots of sapcenter.com/events/all and levisstadium.com/events*, plus each SAP event's own detail page for the published show time",
+    "sensor_geometry": "data/raw/augmented-pems-bay/data/sensor_graph/sensor_metadata.csv"
+  },
+  "venue_inclusion_rule_km": 15.0,
+  "venues": {
+    "SAP Center": {
+      "nearest_sensor_id": "402057",
+      "nearest_sensor_km": 0.512,
+      "nearest_sensor_freeway": "87-S",
+      "sensors_within_2km": 23,
+      "sensors_within_5km": 107,
+      "venue_coord_osm_delta_m": 26.7,
+      "included": true,
+      "capacity": 17562,
+      "capacity_by_use": {
+        "hockey": 17562,
+        "concert": 19190,
+        "wrestling": 18300,
+        "basketball": 18543
+      },
+      "n_events": 69
+    },
+    "Avaya Stadium": {
+      "nearest_sensor_id": "400508",
+      "nearest_sensor_km": 0.6,
+      "nearest_sensor_freeway": "880-S",
+      "sensors_within_2km": 15,
+      "sensors_within_5km": 88,
+      "venue_coord_osm_delta_m": 52.1,
+      "included": true,
+      "capacity": 18000,
+      "capacity_by_use": {
+        "soccer": 18000
+      },
+      "n_events": 9
+    },
+    "Levi's Stadium": {
+      "nearest_sensor_id": "400973",
+      "nearest_sensor_km": 1.632,
+      "nearest_sensor_freeway": "237-E",
+      "sensors_within_2km": 4,
+      "sensors_within_5km": 43,
+      "venue_coord_osm_delta_m": 41.2,
+      "included": true,
+      "capacity": 68500,
+      "capacity_by_use": {
+        "football": 68500
+      },
+      "n_events": 5
+    },
+    "Shoreline Amphitheatre": {
+      "nearest_sensor_id": "401507",
+      "nearest_sensor_km": 1.562,
+      "nearest_sensor_freeway": "101-N",
+      "sensors_within_2km": 4,
+      "sensors_within_5km": 22,
+      "venue_coord_osm_delta_m": 18.0,
+      "included": true,
+      "capacity": 22500,
+      "capacity_by_use": {
+        "concert": 22500
+      },
+      "n_events": 12
+    },
+    "Stanford Stadium": {
+      "nearest_sensor_id": "401507",
+      "nearest_sensor_km": 7.587,
+      "nearest_sensor_freeway": "101-N",
+      "sensors_within_2km": 0,
+      "sensors_within_5km": 0,
+      "venue_coord_osm_delta_m": 96.3,
+      "included": true,
+      "capacity": 50424,
+      "capacity_by_use": {
+        "football": 50424
+      },
+      "n_events": 0
+    },
+    "Oracle Arena": {
+      "nearest_sensor_id": "401507",
+      "nearest_sensor_km": 39.089,
+      "nearest_sensor_freeway": "101-N",
+      "sensors_within_2km": 0,
+      "sensors_within_5km": 0,
+      "venue_coord_osm_delta_m": 15.0,
+      "included": false,
+      "capacity": 19596,
+      "capacity_by_use": {
+        "basketball": 19596,
+        "concert": 19596
+      },
+      "n_events": 0
+    },
+    "Oakland Coliseum": {
+      "nearest_sensor_id": "401507",
+      "nearest_sensor_km": 39.167,
+      "nearest_sensor_freeway": "101-N",
+      "sensors_within_2km": 0,
+      "sensors_within_5km": 0,
+      "venue_coord_osm_delta_m": 11.6,
+      "included": false,
+      "capacity": 35067,
+      "capacity_by_use": {
+        "baseball": 46847,
+        "football": 63132
+      },
+      "n_events": 0
+    },
+    "AT&T Park": {
+      "nearest_sensor_id": "401507",
+      "nearest_sensor_km": 48.994,
+      "nearest_sensor_freeway": "101-N",
+      "sensors_within_2km": 0,
+      "sensors_within_5km": 0,
+      "venue_coord_osm_delta_m": 15.1,
+      "included": false,
+      "capacity": 41915,
+      "capacity_by_use": {
+        "baseball": 41915
+      },
+      "n_events": 0
+    }
+  },
+  "capacity_check": {
+    "method": "每个场馆的 Wikipedia infobox capacity 字段，2026-09-02 人工核对；Levi's concert 用 U2 Boxscore 实测开放座位数",
+    "source": "en.wikipedia.org venue infoboxes",
+    "type_to_configuration": {
+      "NHL": "hockey",
+      "AHL": "hockey",
+      "ice_show": "hockey",
+      "NBA": "basketball",
+      "MLS": "soccer",
+      "MLB": "baseball",
+      "NFL": "football",
+      "amateur_sport": "football",
+      "concert": "concert",
+      "stadium_concert": "concert",
+      "amphitheater_concert": "concert",
+      "music_festival": "concert",
+      "wrestling": "wrestling"
+    },
+    "note": "A venue has one capacity PER CONFIGURATION. Using the sport number for a concert is a real error: it produced a concert default of 14,000 (0.80 x SAP's 17,562 hockey capacity) instead of 15,352 (0.80 x its 19,190 concert capacity), and a stadium_concert default of 55,000 against a real 50,072."
+  },
+  "venue_coord_check": {
+    "method": "OpenStreetMap Nominatim, one query per venue, cached to disk",
+    "tolerance_km": 0.5,
+    "results": {
+      "SAP Center": {
+        "status": "ok",
+        "query": "SAP Center, San Jose, California",
+        "osm_lat": 37.33286,
+        "osm_lon": -121.901225,
+        "delta_m": 26.7,
+        "wikidata_delta_m": 13.1
+      },
+      "Avaya Stadium": {
+        "status": "ok",
+        "query": "PayPal Park, San Jose, California",
+        "osm_lat": 37.351309,
+        "osm_lon": -121.924672,
+        "delta_m": 52.1,
+        "wikidata_delta_m": 36.7
+      },
+      "Levi's Stadium": {
+        "status": "ok",
+        "query": "Levi's Stadium, Santa Clara, California",
+        "osm_lat": 37.402987,
+        "osm_lon": -121.969649,
+        "delta_m": 41.2,
+        "wikidata_delta_m": 54.2
+      },
+      "Shoreline Amphitheatre": {
+        "status": "ok",
+        "query": "Shoreline Amphitheatre, Mountain View, California",
+        "osm_lat": 37.426862,
+        "osm_lon": -122.080607,
+        "delta_m": 18.0,
+        "wikidata_delta_m": 12.4
+      },
+      "Stanford Stadium": {
+        "status": "ok",
+        "query": "Stanford Stadium, Stanford, California",
+        "osm_lat": 37.434526,
+        "osm_lon": -122.161987,
+        "delta_m": 96.3,
+        "wikidata_delta_m": 25.4
+      },
+      "Oracle Arena": {
+        "status": "ok",
+        "query": "Oakland Arena, Oakland, California",
+        "osm_lat": 37.750273,
+        "osm_lon": -122.202932,
+        "delta_m": 15.0,
+        "wikidata_delta_m": 4.6
+      },
+      "Oakland Coliseum": {
+        "status": "ok",
+        "query": "Oakland Coliseum, Oakland, California",
+        "osm_lat": 37.751633,
+        "osm_lon": -122.200475,
+        "delta_m": 11.6,
+        "wikidata_delta_m": 8.4
+      },
+      "AT&T Park": {
+        "status": "ok",
+        "query": "Oracle Park, San Francisco, California",
+        "osm_lat": 37.778606,
+        "osm_lon": -122.389472,
+        "delta_m": 15.1,
+        "wikidata_delta_m": 32.3
+      }
+    }
+  },
+  "n_events": 95,
+  "counts": {
+    "by_venue": {
+      "Levi's Stadium": 5,
+      "SAP Center": 69,
+      "Avaya Stadium": 9,
+      "Shoreline Amphitheatre": 12
+    },
+    "by_type": {
+      "NFL": 1,
+      "NHL": 27,
+      "AHL": 24,
+      "concert": 15,
+      "wrestling": 2,
+      "festival": 1,
+      "MLS": 9,
+      "motorsport": 1,
+      "ice_show": 1,
+      "stadium_concert": 1,
+      "amphitheater_concert": 9,
+      "music_festival": 3,
+      "amateur_sport": 1
+    },
+    "time_source": {
+      "espn": 37,
+      "venue_detail_page": 40,
+      "venue_convention": 16,
+      "venue_site": 2
+    },
+    "attendance_source": {
+      "espn": 37,
+      "default": 54,
+      "billboard_boxscore": 4
+    },
+    "attendance_kind": {
+      "announced_observed": 11,
+      "announced_sellout_at_capacity": 26,
+      "type_default_estimate": 54,
+      "boxscore_observed": 4
+    },
+    "confidence": {
+      "high": 37,
+      "medium": 46,
+      "low": 12
+    }
+  },
+  "estimated": {
+    "start_time": 16,
+    "attendance": 54,
+    "end_time": 95
+  },
+  "detail_page_audit": {
+    "detail_pages_with_a_show_time": 127,
+    "detail_pages_failed": 3,
+    "detail_pages_rejected_date_mismatch": 3
+  },
+  "column_origins": {
+    "event_id": {
+      "origin": "computed",
+      "note": "venue slug + start_time"
+    },
+    "start_time": {
+      "origin": "fetched|assumed",
+      "note": "fetched for 79 rows; assumed for the rest - read start_time_basis"
+    },
+    "end_time": {
+      "origin": "assumed",
+      "note": "ALWAYS start + events.defaults[type].duration_min; no source publishes a finish"
+    },
+    "timezone": {
+      "origin": "computed",
+      "note": "constant, copied from data.timezone"
+    },
+    "venue_name": {
+      "origin": "fetched",
+      "note": "venue whose calendar or ESPN record produced the row"
+    },
+    "expected_attendance": {
+      "origin": "fetched|assumed",
+      "note": "fetched for 37 rows; assumed for the rest - read attendance_kind"
+    },
+    "attendance_kind": {
+      "origin": "computed",
+      "note": "label over attendance_source and venue_capacity"
+    },
+    "event_type": {
+      "origin": "fetched|computed",
+      "note": "the league name, or classify() run on the title"
+    },
+    "event_name": {
+      "origin": "fetched",
+      "note": "title as the source published it"
+    },
+    "duration_min": {
+      "origin": "assumed",
+      "note": "events.defaults[type].duration_min"
+    },
+    "date_source": {
+      "origin": "computed",
+      "note": "label; the DATE itself is fetched on every row"
+    },
+    "time_source": {
+      "origin": "computed",
+      "note": "label"
+    },
+    "attendance_source": {
+      "origin": "computed",
+      "note": "label"
+    },
+    "duration_source": {
+      "origin": "computed",
+      "note": "label; constant nominal_by_type"
+    },
+    "start_time_basis": {
+      "origin": "computed",
+      "note": "exact_published vs type_convention"
+    },
+    "assumed_from": {
+      "origin": "computed",
+      "note": "the exact config keys and values this row leans on"
+    },
+    "start_time_is_estimated": {
+      "origin": "computed",
+      "note": "flag over time_source"
+    },
+    "end_time_is_estimated": {
+      "origin": "computed",
+      "note": "flag; 1 on every row"
+    },
+    "attendance_is_estimated": {
+      "origin": "computed",
+      "note": "flag over attendance_source"
+    },
+    "confidence": {
+      "origin": "computed",
+      "note": "rollup of the two variable flags"
+    },
+    "source": {
+      "origin": "computed",
+      "note": "provenance tag"
+    },
+    "source_url": {
+      "origin": "computed",
+      "note": "the request URL or archived page the row came from"
+    }
+  },
+  "origin_legend": {
+    "fetched": "read from a source document; source_url retrieves it",
+    "computed": "deterministic function of other columns; recomputable",
+    "assumed": "rests on a configs/*.yaml value no source published - THE ONLY UNCERTAIN CATEGORY",
+    "hand_entered": "typed into the VENUES registry in fetch_events.py; NO script verifies it"
+  },
+  "audited_corrections": {
+    "excluded": [
+      "SAP Center 2017-04-11 Barracuda vs. Tucson",
+      "SAP Center 2017-04-12 Barracuda vs. Tucson",
+      "SAP Center 2017-04-13 Barracuda vs. Tucson",
+      "SAP Center 2017-04-14 Barracuda vs. Tucson"
+    ],
+    "excluded_matched": 4,
+    "exclusion_reason": "sjbarracuda.com April 2017 archive shows no Tucson game and no game at all on these dates; stale SAP listing entry",
+    "added": [
+      "Barracuda vs. Stockton (Calder Cup Playoffs) @ 2017-04-21 19:00",
+      "Barracuda vs. Stockton (Calder Cup Playoffs) @ 2017-04-23 15:00"
+    ]
+  }
+}

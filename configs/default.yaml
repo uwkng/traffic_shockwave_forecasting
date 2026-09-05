@@ -5,10 +5,38 @@ data:
   raw_dir: data/raw
   processed_dir: data/processed
   pems_bay_dir: data/raw/augmented-pems-bay
-  weather_csv: data/raw/weather/weather_hourly.csv
+  # This is what acquire.build_weather() actually WRITES (5-min, ASOS SJC+NUQ,
+  # IDW-merged). It is NOT weather_hourly.csv - that name appears in acquire.py's
+  # module docstring but no code ever produces it, and a stale Open-Meteo file
+  # under that name sat here until 2026-09-04. Pointing at it did not error, it
+  # silently fed the pipeline hourly reanalysis instead of 5-min gauge data.
+  # The old file is kept as weather_openmeteo_OLD_do_not_use.csv.
+  weather_csv: data/raw/weather/weather_5min.csv
   events_csv: data/raw/events/events.csv
+  venues_csv: data/raw/events/venues.csv
+
+  # inside the augmented PEMS-BAY checkout; fetch_events.py measures every venue
+  # against these coordinates, the same file align.py uses to place graph nodes.
+  sensor_metadata_csv: data/sensor_graph/sensor_metadata.csv
+
+  # PEMS-BAY timestamps are LOCAL wall-clock US Pacific, and events.csv follows
+  # them exactly. Not Eastern, not UTC - either would shift every event window.
+  timezone: America/Los_Angeles
 
   freq_min: 5              # target sampling interval (minutes)
+
+  # Asserted by align.py. 181 days x 288 = 52,128, but the file has 52,116:
+  # 2017-03-12 02:00..02:55 does not exist (DST). See contract.DST_GAP.
+  expected_timesteps: 52116
+  expected_nodes: 325
+  adjacency_pkl: data/sensor_graph/adj_mx_bay.pkl
+
+  # relative to pems_bay_dir. Rows are SENSORS, columns are TIMESTAMPS, and
+  # speed.csv's column labels are the authoritative time axis for the project.
+  speed_csv: data/traffic_data/speed.csv
+  occupancy_csv: data/traffic_data/occupancy.csv
+  sensor_ids_txt: data/sensor_graph/graph_sensor_ids.txt
+  distances_csv: data/sensor_graph/distances_bay_2017.csv
   date_range:
     start: "2017-01-01"
     end: "2017-06-30"
@@ -21,6 +49,204 @@ data:
   windows:
     input: 12              # 60 min of history
     horizon: 12            # 60 min ahead
+
+events:
+  # ---- collection ---------------------------------------------------------
+  # Enumerate by VENUE CALENDAR, not by team. Enumerating the 5 pro teams
+  # missed 26 AHL games, 17 concerts, WWE and an ice show at SAP Center alone.
+  max_venue_distance_km: 15.0   # drop venues further than this from ANY sensor.
+                                # NOT a tuned parameter, and the result is NOT
+                                # sensitive to it: the registered venues sit at
+                                # 0.51 / 0.60 / 1.63 / 7.59 km and then nothing
+                                # until 39.09 km. ANY value in (7.6, 39.1] -
+                                # 10, 15, 20, 30 - yields the identical venue set
+                                # and a byte-identical events.csv. 15 is simply
+                                # the middle of that 31.5 km empty gap.
+                                # Oracle Arena / Oakland Coliseum / AT&T Park sit
+                                # 39-49 km out and cannot affect the South Bay;
+                                # at tau_km=4 their event_load weight would be
+                                # 6e-5 of SAP Center's anyway.
+  include_preseason: false
+  sources:
+    espn: true                  # exact start times + real attendance, pro leagues
+    sapcenter_wayback: true     # full arena calendar (concerts, AHL, WWE, ...)
+    levis_wayback: true         # stadium concerts (U2 Joshua Tree, 2017-05-17)
+    shoreline_wayback: true     # Shoreline Amphitheatre, Mountain View: 22,500
+                                # seats, 1.56 km from a sensor. Its season is
+                                # May-October, so all 12 in-period shows land in
+                                # 2017-05-26 .. 06-25 - exactly the `single`
+                                # split's test window, which held 12 events total
+                                # before this source was added.
+    sapcenter_detail_times: true  # fetch each SAP event page for the real
+                                  # doors/show time instead of assuming 20:00
+  espn_leagues:
+    MLB: baseball/mlb
+    NHL: hockey/nhl
+    NBA: basketball/nba
+    MLS: soccer/usa.1
+    NFL: football/nfl          # the 2016 season finale falls on 2017-01-01 at Levi's
+  wayback_snapshots_per_source: 8
+  cache_dir: data/raw/events/_cache
+  request_timeout_s: 30
+  request_retries: 4
+
+  # ---- per-type defaults, used when the source has no exact value ----------
+  # start times are venue conventions; rows carry time_source / attendance_source
+  # so the paper can state exactly which values were observed vs assumed.
+  #
+  # WHERE THE ATTENDANCE NUMBERS COME FROM. Four bases, and each row's
+  # `assumed_from` column names the exact key it used.
+  #
+  #  (1) MEASURED - a published figure for this team/act, not a capacity guess:
+  #        AHL             4,412  Barracuda season average, 24th of 30 (hockeydb)
+  #        stadium_concert 50,072  the house U2 offered and sold out at Levi's
+  #                                (Billboard Boxscore)
+  #
+  #  (2) = the home venue's capacity, because these fixtures routinely sell out:
+  #        NHL 17,400 / SAP 17,562 = 0.991   MLS 18,000 / Avaya 18,000 = 1.000
+  #        NFL 68,500 / Levi's 68,500 = 1.000
+  #      Barely used in practice: 37 of 37 league rows carry ESPN's own figure.
+  #
+  #  (3) 0.80 x the venue's capacity FOR THAT CONFIGURATION - the top tier is
+  #      held back for production and the cheap seats do not always fill:
+  #        concert              15,352 / SAP's 19,190 CONCERT capacity = 0.800
+  #        amphitheater_concert 18,000 / Shoreline 22,500              = 0.800
+  #        music_festival       18,000 / Shoreline 22,500              = 0.800
+  #      Use the sport capacity here and you get it wrong: 0.80 x SAP's 17,562
+  #      HOCKEY capacity gave 14,000, ~9% low on 15 concert rows.
+  #      The 0.80 factor is a convention, not a source, but it is now partly
+  #      validated: the three Boxscore-measured Shoreline shows load at
+  #      0.79 / 0.99 / 0.75, mean 0.84, mean gate 18,502 vs this 18,000.
+  #
+  #  (4) JUDGEMENT - no source, no formula, no venue to scale against. Six
+  #      rows total. Stated plainly so nobody mistakes them for measurements:
+  #        motorsport 40,000 | festival 15,000 | wrestling 12,000
+  #        amateur_sport 10,000 | ice_show 9,000
+  #
+  defaults:
+    NHL:              {attendance: 17400, duration_min: 150, start: "19:30"}
+    # 4,412 = the San Jose Barracuda's MEASURED average attendance, 24th of 30 in
+    # the AHL (hockeydb, via en.wikipedia.org/wiki/San_Jose_Barracuda). NOTE it is
+    # the 2015-16 season, one year before the study period - no 2016-17 figure is
+    # published anywhere reachable (hockeydb renders via JS, the AHL season page's
+    # attendance field is empty, the club site does not report gates). It replaces
+    # an unsourced 4,200, which turned out to be the seat count of the arena the
+    # Barracuda moved to in 2022, not an attendance figure at all.
+    # Low, but correctly low: they play in the Sharks' 17,562-seat building,
+    # curtained down, in a market the parent club already fills. 4,412/17,562 = 25%.
+    AHL:              {attendance:  4412, duration_min: 150, start: "19:00"}
+    NBA:              {attendance: 19596, duration_min: 150, start: "19:30"}
+    MLS:              {attendance: 18000, duration_min: 120, start: "19:30"}
+    MLB:              {attendance: 30000, duration_min: 180, start: "19:05"}
+    NFL:              {attendance: 68500, duration_min: 195, start: "13:25"}
+    # 0.80 x the CONCERT configuration of the host venue, not the sport one.
+    # concert:          0.80 x SAP Center's 19,190 concert capacity (its hockey
+    #                   capacity is 17,562 - using it gave 14,000, ~9% too low).
+    # stadium_concert:  0.80 x Levi's 50,072 concert capacity, which is the house
+    #                   U2's own Boxscore shows was offered. Using the 68,500 NFL
+    #                   capacity gave 55,000 - 9.8% above the real sold-out gate.
+    concert:          {attendance: 15352, duration_min: 180, start: "20:00"}
+    # 50,072 is MEASURED, not a capacity fraction: it is the house U2 offered and
+    # sold out at Levi's (Billboard Boxscore). A stadium concert has no stable
+    # capacity to take 0.80 of - it depends where the stage goes, and Levi's
+    # record is 80,058 (Ed Sheeran, 2023). Earlier values were 55,000
+    # (0.80 x the 68,500 NFL capacity, 9.8% above the real gate) and 40,058
+    # (0.80 x 50,072, which double-discounted an already sold-out house).
+    stadium_concert:  {attendance: 50072, duration_min: 210, start: "19:00"}
+    # 0.80 x Shoreline's 22,500 capacity, the same rule as concert /
+    # stadium_concert. start 19:00 is a convention: the venue's listing carries
+    # NO usable time (see events.sources.shoreline_wayback) and its per-event
+    # pages carry no time at all - checked 2026-09-02, four pages, zero matches.
+    amphitheater_concert: {attendance: 18000, duration_min: 180, start: "19:00"}
+    wrestling:        {attendance: 12000, duration_min: 180, start: "17:00"}
+    ice_show:         {attendance:  9000, duration_min: 150, start: "19:00"}
+    motorsport:       {attendance: 40000, duration_min: 210, start: "19:00"}
+    festival:         {attendance: 15000, duration_min: 360, start: "11:00"}
+    # All-day music festival. Distinct from `festival` (which is the food/expo
+    # shape: 11:00-17:00) because the traffic signature is different - arrivals
+    # spread across the afternoon and the crowd leaves near midnight. KITS'
+    # own history of BFD: "would run all day, with up-and-coming bands on the
+    # festival stage during the day, and more established bands on the main
+    # stage at night". 12:00 + 11 h is a CONVENTION, not a published schedule;
+    # every row using it is flagged start_time_is_estimated=1.
+    # 18,000 = 0.80 x Shoreline's 22,500, the only venue hosting these in the
+    # study period. (Its capacity reaches 30,000 only when the parking-lot
+    # stages are used, which is not established for these three dates.)
+    music_festival:   {attendance: 18000, duration_min: 660, start: "12:00"}
+    amateur_sport:    {attendance: 10000, duration_min: 180, start: "19:00"}
+    other:            {attendance: 10000, duration_min: 150, start: "19:00"}
+
+features:
+  event_load:
+    tau_km: 4.0             # exp(-d/tau) spatial decay
+    attendance_ref: 20000   # normaliser, so a full arena is ~1.0
+    distance: haversine     # haversine | road
+    # How long an event is treated as affecting traffic. This shapes the INPUT
+    # channels. Keep it separate from eval.event_phases, which slices the
+    # REPORTED metrics: the input span is deliberately wide (arrivals through
+    # egress tail) while the reported window is the egress hour alone, because
+    # measured, the whole 5.5-hour span dilutes the -1.2 mph egress dip to
+    # +0.41 mph.
+    lead_min: -90           # arrivals begin
+    lag_min: 90             # egress tail
+    # Applied to event_load ONLY, never to event_active_decay - see
+    # contract.EVENT_LOAD_MIN_ATTENDANCE for the measurements.
+    min_attendance: 15000
+  time_of_day: fraction     # fraction | sincos (sincos => 12 channels)
+
+split:
+  mode: rolling             # single | rolling
+  # 0 = no embargo, matching notebooks/train_stgcn.ipynb and every published
+  # PEMS-BAY baseline. Set to 24 (= input 12 + horizon 12) to drop the samples
+  # that straddle a split boundary.
+  #
+  # What the embargo is for: a sample spans 24 timesteps, and consecutive
+  # samples are one step apart, so cutting the SAMPLE LIST at 70% cuts through
+  # overlapping TIME ranges. Without it, train's last target (05-07 17:15-18:10)
+  # and val's first target (17:20-18:15) share 55 minutes - the model is scored
+  # on hours it was trained on. 23 samples at each of the two boundaries.
+  #
+  # Why 0 is nonetheless a defensible default here: train and test are separated
+  # by the whole of val, so no training gradient ever sees a test target and the
+  # headline test number is unaffected. What it touches is early stopping - val
+  # MAE is slightly optimistic, so a marginally different epoch may be selected.
+  # Keeping it at 0 makes our splits like-for-like with the published baselines
+  # we compare against, which do not embargo either.
+  embargo_steps: 0
+  single:                   # ONLY for reproducing published vanilla-STGCN numbers.
+    train: 0.70             # Its test period holds ZERO adverse-weather timesteps,
+    val: 0.10               # so no weather result may be reported on it.
+    test: 0.20
+  rolling:
+    # See contract.ROLLING for why these numbers. Short version: fold count does
+    # not change how much signal reaches test, only how it is partitioned, and
+    # the unit that matters is the episode (90 rain spells, 60 egress hours,
+    # 4 holidays in the period). 28-day blocks give a median of 10 rain spells
+    # per fold; 14-day blocks give 4. min_train 28 rather than 42 puts 51 of the
+    # 90 rain spells into test instead of 37, because January is the wettest
+    # month and a 42-day warm-up locks most of it away.
+    min_train_days: 28
+    test_block_days: 28
+    val_days: 7
+    n_folds: 6
+
+eval:
+  horizons_min: [15, 30, 60]
+  # Thresholds and the measurements behind them live in src/eval/windows.py.
+  event_phases:             # minutes; egress is relative to end_time
+    ingress: [-90, 0]
+    in_play: [0, null]
+    egress:  [0, 60]        # the shockwave; measured -1.22 mph for NHL
+  weather:
+    adverse_mm: 0.51        # p75 of wet steps; -2.22 mph. TWO tiers, not three.
+    lag_steps: 6
+  min_attendance: 15000
+  distance_bins_km: [0, 1, 2, 5, 10, 20]
+  onset:
+    speed_mph: 45.0
+    persist_steps: 3
+  effective_n_unit: episode   # never node-timestep; see contract.py
+  paired_test: wilcoxon
 
 model:
   stgcn:
