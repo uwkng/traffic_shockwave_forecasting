@@ -120,6 +120,39 @@ def propagation_figure(panels: dict, adj: np.ndarray, out: pathlib.Path):
     return out
 
 
+def auto_dates(cfg, time_index) -> list[str]:
+    """One day per rolling fold: the wettest commute day in its TEST block.
+
+    Choosing the day by hand is how a figure ends up showing the case the model
+    happened to get right. This picks on the exogenous signal alone - rainfall
+    during the weekday peak - which is known before any model runs.
+
+    Holidays are excluded, and that is not cosmetic. The first version of this
+    function returned 2017-02-20 for fold00: the wettest commute-hour day in
+    that test block is Presidents' Day, which has no commute. Measured, US
+    holidays run +9.50 mph in the AM peak and +11.27 in the PM - the figure
+    would have shown a free-flowing network captioned as a rainy rush hour.
+    """
+    import json
+    from src.eval import windows as W
+    rain = W.weather_windows(cfg["data"]["weather_csv"], time_index)
+    peak = W.commute_mask(time_index)
+    meta = json.loads(
+        (pathlib.Path(cfg["data"]["processed_dir"]) / "splits_meta.json")
+        .read_text(encoding="utf-8"))["rolling"]
+    idx = pd.DatetimeIndex(time_index)
+    out = []
+    for fold in sorted(meta):
+        t = meta[fold]["test"]
+        block = (idx >= pd.Timestamp(t["from"])) & (idx <= pd.Timestamp(t["to"]))
+        wet = rain & peak & block & ~W.holiday_mask(time_index)
+        if not wet.any():
+            continue
+        days = pd.Series(wet).groupby(idx.date).sum()
+        out.append(str(days.idxmax()))
+    return out
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -131,6 +164,11 @@ def main() -> int:
     ap.add_argument("--to-hour", type=int, default=22)
     ap.add_argument("--predictions", nargs="*", default=[],
                     help="data/processed/predictions/*.npz to overlay")
+    ap.add_argument("--auto", action="store_true",
+                    help="ignore --date; draw one panel per rolling fold, each "
+                         "on the wettest commute day inside that fold's TEST "
+                         "block. Picking by hand risks picking a day the model "
+                         "happens to do well on.")
     args = ap.parse_args()
     cfg = load_config(args.config)
 
@@ -141,24 +179,35 @@ def main() -> int:
     adj = np.load(proc / "adj_mx.npy")
     ti = pd.DatetimeIndex(np.load(proc / "time_index.npy", allow_pickle=True))
 
-    day = pd.Timestamp(args.date)
-    sel = ((ti >= day + pd.Timedelta(hours=args.from_hour))
-           & (ti < day + pd.Timedelta(hours=args.to_hour)))
-    assert sel.any(), f"{args.date} is not in the time axis"
     nodes = freeway_order(cfg, ids, args.freeway)
+    dates = [args.date]
+    if args.auto:
+        dates = auto_dates(cfg, ti)
+        print(f"  auto-selected: {', '.join(dates)}")
 
-    panels = {"observed": speed[sel]}
-    for f in args.predictions:
-        z = np.load(f)
-        panels[pathlib.Path(f).stem] = z["pred"][:, contract.EVAL_HORIZON_STEPS["30min"] - 1]
+    written = []
+    for date in dates:
+        day = pd.Timestamp(date)
+        sel = ((ti >= day + pd.Timedelta(hours=args.from_hour))
+               & (ti < day + pd.Timedelta(hours=args.to_hour)))
+        if not sel.any():
+            print(f"  skipping {date}: not in the time axis")
+            continue
+        panels = {"observed": speed[sel]}
+        for f in args.predictions:
+            z = np.load(f)
+            panels[pathlib.Path(f).stem] = z["pred"][
+                :, contract.EVAL_HORIZON_STEPS["30min"] - 1]
+        written.append(spacetime(
+            panels, nodes, ti[sel],
+            f"{args.freeway}, {date} - a band leaning backwards is a "
+            f"shockwave travelling upstream",
+            FIGDIR / f"spacetime_{args.freeway}_{date}.png"))
 
-    p1 = spacetime(panels, nodes, ti[sel],
-                   f"{args.freeway}, {args.date} - "
-                   f"a band leaning backwards is a shockwave travelling upstream",
-                   FIGDIR / f"spacetime_{args.freeway}_{args.date}.png")
-    p2 = propagation_figure({"observed": speed}, adj,
-                            FIGDIR / "propagation_ratio.png")
-    print(f"  {p1}\n  {p2}")
+    written.append(propagation_figure({"observed": speed}, adj,
+                                      FIGDIR / "propagation_ratio.png"))
+    for w in written:
+        print(f"  {w}")
     return 0
 
 
