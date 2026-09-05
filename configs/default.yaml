@@ -283,7 +283,28 @@ eval:
 model:
   stgcn:
     Kt: 3                  # temporal conv kernel size
-    Ks: 3                  # Chebyshev polynomial order
+    Ks: 3                  # polynomial / diffusion order
+    # chebyshev | diffusion
+    #
+    # `chebyshev` is what Yu et al. published, and it forces a SYMMETRIC
+    # Laplacian - see scaled_laplacian, which applies max(A, A.T). That makes
+    # the operator direction-blind, which is a structural problem here rather
+    # than a detail: a shockwave is a low-speed band travelling UPSTREAM, and
+    # measured on the observed series it goes upstream 1.53x more often than
+    # downstream at 10 min and 1.71x at 15 min. A symmetric operator cannot
+    # represent that asymmetry at all.
+    #
+    # `diffusion` is the DCRNN / Graph WaveNet answer: powers of the forward and
+    # backward random walks on the RAW directed adjacency, kept separate so the
+    # two directions get different weights. Support count goes from Ks to
+    # 1 + 2(Ks-1) - 3 to 5 - taking the model from 117k to ~150k parameters.
+    # Nothing else changes: ChebConv computes sum_k support_k @ x @ W_k and is
+    # agnostic to what the supports are.
+    #
+    # Run BOTH and report the pair. `chebyshev` keeps rung 0 comparable to the
+    # published PEMS-BAY numbers; `diffusion` tests whether direction-awareness
+    # matters for the phenomenon in the title.
+    graph_conv: chebyshev
     blocks: [[1, 64, 64], [64, 64, 64]]   # [c_in, c_mid, c_out] per ST-Conv block
     dropout: 0.3
 
