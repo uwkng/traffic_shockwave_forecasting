@@ -9,10 +9,35 @@ deploy a special-event signal-timing plan on the sensors near a venue, or do not
 been measured. The question is not whose MAE is lower. It is whether a lower MAE
 converts into acting sooner, and at what cost in false alarms.
 
-Errors are asymmetric and the ratio is the whole argument. A false alarm costs
-staff hours. A miss costs hours of egress delay for tens of thousands of people.
-`cost_ratio` is swept rather than fixed, because the honest claim is "the model
-wins for any ratio above X", not "the model wins at the ratio we chose".
+Errors are asymmetric and the ratio is the whole argument. `cost_ratio` is swept
+rather than fixed, because the honest claim is "the model wins for any ratio
+above X", not "the model wins at the ratio we chose".
+
+TWO USERS SIT ON ONE SWEEP. The same forecasts support two different decisions,
+and they occupy opposite ends of `cost_ratios`. Name which end you are quoting.
+
+  * Network operator - pre-deploy a special-event signal plan. A false alarm
+    costs staff hours; a miss costs egress delay for tens of thousands. Ratio
+    20-50, the right-hand end. Scope `egress`, and it is UNDERPOWERED: fold00
+    has 21 positive cases in total. Report it as a case study, not an estimate.
+
+  * Navigation service - warn one driver to reroute. A false alarm costs that
+    driver a 2-5 minute detour. A miss costs the delay of driving through the
+    jam, and that is measurable on this corpus rather than assumed:
+
+        free-flow median speed                     65.8 mph
+        contiguous <45 mph stretch along a freeway p50 1.99 km, p90 7.87 km
+        delay crossing the p50 stretch at 30 mph   +1.3 min
+        delay crossing the p90 stretch             +5.3 min
+        one 0.74 km segment below 25 mph           +1.06 min (3.5x free-flow)
+
+    So a miss costs roughly what a false alarm costs - ratio 1-3, the left-hand
+    end. That is the demanding operating point: a driver-facing product cannot
+    spend false alarms the way an operator can. Scope `all`, n = 16,743 onsets
+    in fold00, which is where the statistical power is.
+
+The asymmetry between the two scopes is itself worth stating: the decision with
+the most tolerance for false alarms is the one we can least afford to measure.
 
 Everything here is computed on the SAME predictions src/eval/report.py scores,
 so the decision numbers and the MAE numbers cannot drift apart.

@@ -227,9 +227,25 @@ finding - it is the loss-function version of the paper's whole argument.
 
 Median lead 0 for both trivial baselines is the control, not a bug: persistence
 copies the last observation and cannot see an onset before it happens. Any
-positive lead a trained model shows is measured against that floor. Pair with
-the cost sweep in `results/decision__fold*.json` (miss:false-alarm ratios
-1, 2, 5, 10, 20, 50).
+positive lead a trained model shows is measured against that floor.
+
+**Two users, one sweep.** `results/decision__fold*.json` sweeps miss:false-alarm
+ratios 1, 2, 5, 10, 20, 50. Do not pick one - name which end belongs to whom.
+
+| | false alarm costs | miss costs | ratio | scope | n (fold00) |
+|---|---|---|---|---|---:|
+| network operator | staff hours | egress delay for ~17,500 people | 20-50 | `egress` | **21 positives** |
+| navigation service | a 2-5 min detour for one driver | see below | **1-3** | `all` | **16,743 onsets** |
+
+The driver-side miss cost is measured, not assumed: free-flow median 65.8 mph;
+contiguous sub-45 mph stretches run 1.99 km at p50 and 7.87 km at p90; crossing
+them at 30 mph costs +1.3 and +5.3 minutes respectively, and a single 0.74 km
+segment below 25 mph costs +1.06 min, 3.5x its free-flow time.
+
+**The point worth making in the text**: the operator can spend false alarms and
+we cannot measure their decision well (n=21); the driver cannot spend false
+alarms and we can measure it well (n=16,743). The decision with the most
+tolerance for error is the one this dataset is least able to evaluate.
 
 ## Figure 1 — Space-time diagram  `[GPU predictions]`
 
