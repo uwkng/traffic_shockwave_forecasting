@@ -39,11 +39,12 @@ rm -f results/figures/*.png
 # --auto picks one day per fold: the wettest commute-hour day in that fold's
 # TEST block, holidays excluded. Choosing by hand is how a figure ends up
 # showing the day the model happened to get right.
-for fw in 101-N 880-N 101-S 880-S; do
-  $PY -m src.eval.figures --auto --freeway "$fw" \
-      --predictions data/processed/predictions/*.npz 2>/dev/null \
-      || echo "   (no sensors for $fw, skipped)"
-done
+# ONE freeway, as a sanity check that the pipeline drew something sensible.
+# Do not batch-generate figures here: with FULL=1 the prediction tensors travel
+# with the bundle, so any figure - other freeways, other days, other horizons -
+# is a few seconds to redraw wherever the bundle lands.
+$PY -m src.eval.figures --auto --freeway 101-N \
+    --predictions data/processed/predictions/*.npz || echo "!! figures failed"
 
 echo "== recording provenance =="
 rm -rf "$OUT"; mkdir -p "$OUT"/{meta,checkpoints}
