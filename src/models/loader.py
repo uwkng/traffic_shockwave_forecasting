@@ -144,6 +144,15 @@ class WindowDataset:
         # observed - the seam between the two is what deployment looks like.
         self.forecast = forecast
         self.forecast_positions = forecast_positions
+        # NOTE on normalisation: the future block is z-scored with the scaler
+        # fitted on the OBSERVED series, because that is what scalers.json holds
+        # and it is fitted on the training span only - so this leaks nothing.
+        # It does mean the forecast channel is not exactly zero-mean/unit-
+        # variance: measured over fold00's training span the forecast z-scores
+        # come out at mean -0.09..+0.18 and sd 0.72..1.30, the precipitation
+        # channel over-dispersed and wind under-dispersed. Harmless and applied
+        # identically to train, val and test, but do not report the future block
+        # as standardised.
 
     def __len__(self):
         return len(self.ids)

@@ -258,7 +258,7 @@ split:
     n_folds: 6
 
 eval:
-  horizons_min: [15, 30, 45]   # keep in step with contract.EVAL_HORIZON_STEPS
+  horizons_min: [15, 30, 45, 60]   # keep in step with contract.EVAL_HORIZON_STEPS
   # Thresholds and the measurements behind them live in src/eval/windows.py.
   event_phases:             # minutes; egress is relative to end_time
     ingress: [-90, 0]
