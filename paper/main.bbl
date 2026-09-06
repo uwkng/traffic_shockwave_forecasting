@@ -1,0 +1,136 @@
+\begin{thebibliography}{}
+
+\bibitem[\protect\citeauthoryear{Bai \bgroup et al\mbox.\egroup
+  }{2020}]{bai2020agcrn}
+Bai, L.; Yao, L.; Li, C.; Wang, X.; and Wang, C.
+\newblock 2020.
+\newblock Adaptive graph convolutional recurrent network for traffic
+  forecasting.
+\newblock In {\em Advances in Neural Information Processing Systems},
+  volume~33.
+
+\bibitem[\protect\citeauthoryear{Fan \bgroup et al\mbox.\egroup
+  }{2026}]{fan2026igstgnn}
+Fan, L.; Li, B.; Zou, T.; Ye, J.; and Du, B.
+\newblock 2026.
+\newblock Incident-guided spatiotemporal traffic forecasting.
+\newblock arXiv:2602.02528.
+\newblock To appear in Proceedings of the ACM SIGKDD Conference on Knowledge
+  Discovery and Data Mining.
+
+\bibitem[\protect\citeauthoryear{{george-j-ste}}{2024}]{augmentedpemsbay}
+{george-j-ste}.
+\newblock 2024.
+\newblock Augmented {PEMS-BAY}: An augmented version of the {PEMS-BAY} traffic
+  dataset.
+\newblock GitHub repository, github.com/george-j-ste/Augmented-PEMS-BAY.
+\newblock Repository published April 2024; the maintainer's full name is not
+  stated in the repository and requires verification before submission.
+
+\bibitem[\protect\citeauthoryear{Han \bgroup et al\mbox.\egroup
+  }{2024}]{han2024event}
+Han, X.; Zhang, Z.; Wu, Y.; Zhang, X.; and Wu, Z.
+\newblock 2024.
+\newblock Event traffic forecasting with sparse multimodal data.
+\newblock In {\em Proceedings of the 32nd ACM International Conference on
+  Multimedia},  8855--8864.
+
+\bibitem[\protect\citeauthoryear{{Iowa Environmental Mesonet}}{2024}]{iem_asos}
+{Iowa Environmental Mesonet}.
+\newblock 2024.
+\newblock {ASOS--AWOS--METAR} data download.
+\newblock Iowa State University,
+  \url{https://mesonet.agron.iastate.edu/request/download.phtml}.
+
+\bibitem[\protect\citeauthoryear{Kralj \bgroup et al\mbox.\egroup
+  }{2025}]{kralj2025pruning}
+Kralj, I.; Giaretta, L.; Je{\v z}i{\'c}, G.; Podnar~{\v Z}arko, I.; and
+  Girdzijauskas, {\v S}.
+\newblock 2025.
+\newblock Adaptive graph pruning with sudden-events evaluation for traffic
+  prediction using online semi-decentralized {ST-GNNs}.
+\newblock arXiv:2512.17352.
+
+\bibitem[\protect\citeauthoryear{Lee \bgroup et al\mbox.\egroup
+  }{2021}]{lee2021empirical}
+Lee, H.; Park, C.; Jin, S.; Chu, H.; Choo, J.; and Ko, S.
+\newblock 2021.
+\newblock An empirical experiment on deep learning models for predicting
+  traffic data.
+\newblock In {\em Proceedings of the 37th IEEE International Conference on Data
+  Engineering}.
+
+\bibitem[\protect\citeauthoryear{Li \bgroup et al\mbox.\egroup
+  }{2018}]{li2018dcrnn}
+Li, Y.; Yu, R.; Shahabi, C.; and Liu, Y.
+\newblock 2018.
+\newblock Diffusion convolutional recurrent neural network: Data-driven traffic
+  forecasting.
+\newblock In {\em International Conference on Learning Representations}.
+
+\bibitem[\protect\citeauthoryear{Li \bgroup et al\mbox.\egroup
+  }{2023}]{li2023periodic}
+Li, F.; Yan, H.; Sui, H.; Wang, D.; Zuo, F.; Liu, Y.; Li, Y.; and Jin, D.
+\newblock 2023.
+\newblock Periodic shift and event-aware spatio-temporal graph convolutional
+  network for traffic congestion prediction.
+\newblock In {\em Proceedings of the 31st ACM International Conference on
+  Advances in Geographic Information Systems},  1--10.
+
+\bibitem[\protect\citeauthoryear{Song \bgroup et al\mbox.\egroup
+  }{2024}]{song2024gatinformer}
+Song, Y.; Luo, R.; Zhou, T.; Zhou, C.; and Su, R.
+\newblock 2024.
+\newblock Graph attention informer for long-term traffic flow prediction under
+  the impact of sports events.
+\newblock {\em Sensors} 24(15):4796.
+
+\bibitem[\protect\citeauthoryear{Wang and Luo}{2023}]{wang2023weagan}
+Wang, Y., and Luo, Y.
+\newblock 2023.
+\newblock {WeaGAN}: Weather-aware graph attention network for traffic
+  prediction.
+\newblock In {\em Proceedings of the 26th European Conference on Artificial
+  Intelligence}.
+
+\bibitem[\protect\citeauthoryear{Wu \bgroup et al\mbox.\egroup
+  }{2019}]{wu2019graphwavenet}
+Wu, Z.; Pan, S.; Long, G.; Jiang, J.; and Zhang, C.
+\newblock 2019.
+\newblock Graph wavenet for deep spatial-temporal graph modeling.
+\newblock In {\em Proceedings of the Twenty-Eighth International Joint
+  Conference on Artificial Intelligence},  1907--1913.
+
+\bibitem[\protect\citeauthoryear{Yu, Yin, and Zhu}{2018}]{yu2018stgcn}
+Yu, B.; Yin, H.; and Zhu, Z.
+\newblock 2018.
+\newblock Spatio-temporal graph convolutional networks: A deep learning
+  framework for traffic forecasting.
+\newblock In {\em Proceedings of the Twenty-Seventh International Joint
+  Conference on Artificial Intelligence},  3634--3640.
+
+\bibitem[\protect\citeauthoryear{Zhang \bgroup et al\mbox.\egroup
+  }{2021}]{zhang2021hybrid}
+Zhang, W.; Yao, R.; Du, X.; and Ye, J.
+\newblock 2021.
+\newblock Hybrid deep spatio-temporal models for traffic flow prediction on
+  holidays and under adverse weather.
+\newblock {\em IEEE Access} 9:157165--157181.
+
+\bibitem[\protect\citeauthoryear{Zhang \bgroup et al\mbox.\egroup
+  }{2023}]{zhang2023testtime}
+Zhang, Z.; Zhang, W.; Huang, Y.; and Chen, K.
+\newblock 2023.
+\newblock Test-time compensated representation learning for extreme traffic
+  forecasting.
+\newblock arXiv:2309.09074.
+
+\bibitem[\protect\citeauthoryear{Zhu \bgroup et al\mbox.\egroup
+  }{2021}]{zhu2021astgcn}
+Zhu, J.; Wang, Q.; Tao, C.; Deng, H.; Zhao, L.; and Li, H.
+\newblock 2021.
+\newblock {AST-GCN}: Attribute-augmented spatiotemporal graph convolutional
+  network for traffic forecasting.
+\newblock {\em IEEE Access} 9:35973--35983.
+
+\end{thebibliography}

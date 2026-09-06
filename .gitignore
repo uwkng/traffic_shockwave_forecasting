@@ -229,3 +229,14 @@ data/processed/
 # writes ~2 GB of checkpoints and per-model prediction tensors.
 checkpoints/*.pt
 data/processed/predictions/
+
+# LaTeX build artifacts (main.pdf and main.bbl ARE tracked on purpose:
+# teammates read the pdf without a TeX install, and the bbl lets the paper
+# build without running bibtex)
+paper/*.aux
+paper/*.log
+paper/*.blg
+paper/*.out
+paper/*.synctex.gz
+paper/*.fls
+paper/*.fdb_latexmk

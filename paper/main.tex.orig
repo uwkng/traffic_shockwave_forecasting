@@ -1,0 +1,312 @@
+\documentclass[letterpaper]{article}
+\usepackage{aaai}
+\usepackage{times}
+\usepackage{helvet}
+\usepackage{courier}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta, positioning}
+\frenchspacing
+\setlength{\pdfpagewidth}{8.5in}
+\setlength{\pdfpageheight}{11in}
+\pdfinfo{
+/Title (Event- and Weather-Aware Spatio-Temporal Graph Networks for Traffic Shockwave Forecasting)
+/Author (Yilang Mei, Raouf Tadros, Uwe Koenig)
+/Keywords (traffic forecasting, spatio-temporal graph neural networks, scheduled events, weather, PEMS-BAY)
+}
+\setcounter{secnumdepth}{2}
+
+% Green placeholder marker: everything wrapped in \tbd{} is unfinished.
+\definecolor{tbdgreen}{RGB}{0,130,0}
+\newcommand{\tbd}[1]{\textcolor{tbdgreen}{#1}}
+
+\makeatother
+
+\nocopyright
+
+\title{Event- and Weather-Aware Spatio-Temporal Graph Networks\\for Traffic Shockwave Forecasting}
+\author{Yilang Mei \and Raouf Tadros \and Uwe K\"onig\\
+Technical University of Munich\\
+\{yilang.mei, raouf.tadros, uwe.koenig\} @tum.de
+}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\begin{quote}
+Short-term traffic forecasts feed operational decisions such as signal control, detour guidance, and transit dispatch. Their value is highest during unusual periods, for example heavy rain or the departure peak after a stadium event, yet standard benchmarks average errors over test sets dominated by routine traffic. A small aggregate improvement can therefore hide poor performance in exactly the intervals that matter for operations. We ask whether weather information and scheduled-event data, both available before congestion forms, improve speed forecasts specifically inside such anomalous windows. We use the PEMS-BAY network of 325 road sensors and a Spatio-Temporal Graph Convolutional Network (STGCN). The conditioned model extends the speed-only input with calendar, weather, event-activity, event-magnitude, and venue-distance channels while the graph and temporal blocks stay unchanged. The evaluation reports MAE, RMSE, and masked MAPE at 15, 30, and 60 minutes on the full test set, on exogenously defined event and adverse-weather windows, and on their routine complement, together with error profiles over distance from the venue and a forecast-triggered decision rule. Our speed-only STGCN reproduction reaches a mean MAE of 1.44, 1.93, and 2.58 mph at the three horizons, close to published reference values. \tbd{Final results for the conditioned models to be inserted here; and we state the main comparison and its implication here.}
+\end{quote}
+\end{abstract}
+
+\section{Introduction}
+
+Traffic forecasts are rarely an end in themselves. Agencies use them to time signal plans, position staff, reroute busses, and warn drivers. These interventions matter most when traffic breaks from its daily pattern, for example, while rain reduces road capacity or while 17,000 hockey fans leave a downtown arena within half an hour. Such periods make up a small part of any test set. A model can therefore reduce its average error on a standard benchmark without becoming more useful in the situations where a forecast actually changes a decision.
+
+Spatio-temporal graph neural networks are the established tool for this forecasting task. Sensors become graph nodes, road relationships become edges, and recent measurements become node-level time series. STGCN \cite{yu2018stgcn} and DCRNN \cite{li2018dcrnn} showed that this structure predicts road speeds well from historical observations alone. Later work added learned graph structure \cite{wu2019graphwavenet,bai2020agcrn} or contextual attributes such as observed incidents \cite{fan2026igstgnn}. However, An incident marker only becomes available once the disruption has started. Scheduled events and weather differ in one operationally useful way that they can be known before congestion forms.
+
+This paper addresses two questions. First, does conditioning an STGCN on weather and scheduled-event information improve accuracy inside exogenously defined anomalous windows, rather than only in the aggregate? Second, is the error profile over distance from the venue and over congestion-onset time consistent with a shockwave that spreads outward through the road graph?
+
+Three difficulties shape the design. Anomalous windows are rare, so aggregate metrics can bury them. Hourly weather records and irregular event schedules must be aligned to a 5-minute sensor grid without leaking future information. And an event flag broadcast identically to all 325 sensors says nothing about where the disruption originates, which is why the distance-to-venue channel carries the spatial anchor.
+
+The intended contributions are a set of anomaly windows defined from schedules and weather rather than from the traffic signal itself, a conditioned version of an established architecture instead of a new one, and an evaluation that adds venue-distance profiles, onset timing, and an operational decision rule to the usual point-error metrics.
+
+\section{Related Work}
+
+\subsection{Forecasting anomalous traffic}
+
+Most traffic benchmarks report errors averaged over all test timesteps. Lee et al.~\shortcite{lee2021empirical} compared major deep forecasting models under consistent settings and found that rankings change in intervals with abrupt speed changes. Zhang et al.~\shortcite{zhang2021hybrid} evaluated hybrid models separately under normal conditions, holidays, and adverse weather. Zhang et al.~\shortcite{zhang2023testtime} targeted extreme conditions by retrieving similar historical patterns at test time, and Kralj et al.~\shortcite{kralj2025pruning} proposed a sudden-event accuracy measure after showing that average error can stay strong while sharp slowdowns are missed. In all four studies the difficult intervals are identified from the realized traffic itself. We instead define them from event schedules and weather, which are known independently of the forecast target.
+
+\subsection{Spatio-temporal graph forecasting}
+
+STGCN combines Chebyshev graph convolution with gated temporal convolution \cite{yu2018stgcn}; DCRNN places diffusion convolution inside a recurrent encoder-decoder \cite{li2018dcrnn}. Graph WaveNet adds a self-adaptive adjacency matrix and dilated temporal convolutions \cite{wu2019graphwavenet}, and AGCRN learns node-specific parameters without a supplied graph \cite{bai2020agcrn}. Since our contribution is the conditioning and the evaluation protocol, we keep STGCN unchanged as the forecasting backbone rather than adding another architecture.
+
+\subsection{External context in graph models}
+
+AST-GCN concatenates weather and points of interest to the traffic input \cite{zhu2021astgcn}, and WeaGAN learns weather-traffic interactions through attention gates \cite{wang2023weagan}. On the event side, Li et al.~\shortcite{li2023periodic} model congestion episodes as events in a deployed system, Han et al.~\shortcite{han2024event} fuse traffic with textual event descriptions around convention centers, and GAT-Informer represents a sports event through temporal profiles around its start and end plus each node's distance from the arena \cite{song2024gatinformer}, which makes it the closest prior work. IGSTGNN models the spatial footprint and temporal decay of incidents \cite{fan2026igstgnn}. Dynamic graphs, exogenous context, and abnormal-window evaluation have thus each been studied on their own. What is missing, and what we attempt here, is a single controlled pipeline that combines structured event variables including attendance, weather, disruption-window reporting, and distance-based propagation analysis on a standard benchmark. We do not claim the first event-aware or weather-aware traffic model.
+
+\section{Methodology}
+
+\subsection{Problem definition}
+
+Let the sensor network be a graph $G=(V,E,A)$ with $|V|=N=325$ sensors and a weighted adjacency matrix $A\in\mathbb{R}^{N\times N}$. At timestep $t$ the node features are $X_t\in\mathbb{R}^{N\times C}$. Given the past $L=12$ observations (60 minutes at 5-minute resolution), the task is to predict the next $H=12$ speed states:
+\begin{equation}
+\hat{Y}_{t+1:t+H}=f_\theta\!\left(X_{t-L+1:t},\,A\right),
+\end{equation}
+with $X_{t-L+1:t}\in\mathbb{R}^{L\times N\times C}$ and $\hat{Y}_{t+1:t+H}\in\mathbb{R}^{H\times N}$. The reproduced baseline uses $C=1$ (speed only). The conditioned model uses $C=9$; speed remains the only prediction target.
+
+\subsection{Pipeline overview}
+
+Figure~\ref{fig:pipeline} summarizes the pipeline. Raw traffic, weather, and event records are aligned to one 5-minute index, assembled into a nine-channel tensor, split chronologically, and normalized with training statistics only. The same STGCN is trained once on speed alone and once with the added context channels, and both models are scored by the window-based protocol of Section~\ref{sec:protocol}.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[
+  stage/.style={rectangle, draw=black!65, fill=black!4, rounded corners=2pt,
+    text width=0.82\columnwidth, align=center, font=\small,
+    inner xsep=6pt, inner ysep=5pt},
+  flow/.style={-{Stealth[length=2mm]}, black!65, thick}
+]
+\node[stage] (a) {Raw sources: PEMS-BAY speed ($325\times52{,}116$), hourly weather, 149 scheduled events};
+\node[stage, below=10pt of a] (b) {5-minute alignment and feature assembly\\[2pt] {\scriptsize master tensor $[52{,}116 \times 325 \times 9]$}};
+\node[stage, below=10pt of b] (c) {Chronological 70/10/20 split, z-score fitted on training data only};
+\node[stage, below=10pt of c] (d) {STGCN forecasts\\[2pt] {\scriptsize speed-only $C{=}1$ and context-aware $C{=}9$;\\[1pt] $X\,[12\times325\times C] \rightarrow \hat{Y}\,[12\times325]$}};
+\node[stage, below=10pt of d] (e) {Evaluation: full test set, event and weather windows, venue distance, onset timing, decision rule};
+\draw[flow] (a) -- (b);
+\draw[flow] (b) -- (c);
+\draw[flow] (c) -- (d);
+\draw[flow] (d) -- (e);
+\end{tikzpicture}
+\caption{Data and evaluation pipeline. Every stage reads only information available at forecast time; the split and the normalization never see validation or test data.}
+\label{fig:pipeline}
+\end{figure}
+
+\subsection{Graph construction and samples}
+
+Sensor identifiers and pairwise road distances come from the Augmented PEMS-BAY release \cite{augmentedpemsbay}. A recorded distance $d_{ij}$ becomes a Gaussian edge weight, and weak connections are removed:
+\begin{equation}
+A_{ij}=
+\begin{cases}
+\exp\!\left[-\left(d_{ij}/\sigma_d\right)^{2}\right] & \text{if this value} \geq 0.1,\\[2pt]
+0 & \text{otherwise},
+\end{cases}
+\end{equation}
+where $\sigma_d$ is the standard deviation of the finite recorded distances. Missing speed values (fewer than 0.003\% of all cells) are interpolated linearly in time and filled at the boundaries. Sliding windows over the 52,116 timesteps yield 52,093 samples of 12 input and 12 target steps. The chronological split produces 36,465 training, 5,209 validation, and 10,419 test samples. Mean and standard deviation are fitted on training inputs only, and all metrics are computed after conversion back to miles per hour.
+
+\subsection{STGCN backbone}
+
+The model follows Yu, Yin, and Zhu~\shortcite{yu2018stgcn}. Two spatio-temporal blocks each apply a gated temporal convolution, a Chebyshev graph convolution of order $K_s=3$, a second gated temporal convolution, layer normalization, dropout of 0.3, and a residual connection. Both temporal convolutions use kernel size $K_t=3$. Channel widths are $[1,64,64]$ and $[64,64,64]$, followed by an output convolution and a linear layer that emits all 12 horizons at once, for 116,940 trainable parameters. Training minimizes MAE with Adam at learning rate $10^{-3}$, weight decay $10^{-4}$, batch size 64, gradient clipping at 5.0, and a StepLR schedule (step 10, factor 0.7). Early stopping monitors validation MAE with patience 20. \tbd{[VERIFY: the executed notebook caps training at 100 epochs and configs/default.yaml specifies 200; Lets review the figures in this section to match the code later.]}
+
+\subsection{External feature conditioning}
+
+The conditioned model widens the input from one to nine channels and changes nothing else. Table~\ref{tab:channels} lists the channels and how each varies.
+
+\begin{table}[t]
+\centering
+\small
+\begin{tabular}{@{}rll@{}}
+\toprule
+\# & Channel & Varies over \\
+\midrule
+0 & Speed (target) & traffic \\
+1 & Occupancy & traffic \\
+2 & Time of day & calendar \\
+3 & Day of week & calendar \\
+4 & is holiday & calendar \\
+5 & Temperature & weather \\
+6 & Precipitation & weather \\
+7 & Wind speed & weather \\
+8 & Distance to venue & event \\
+9 & Event active decay & event \\
+10 & Event load & event \\
+\bottomrule
+\end{tabular}
+\caption{The nine input channels of the conditioned STGCN. Channels 1--7 are broadcast to all nodes; channel 10 anchors the event signal in space.}
+\label{tab:channels}
+\end{table}
+
+Weather and event channels are broadcast to every node, so on their own they carry no information about where a disruption starts. The distance-to-venue channel supplies that anchor. Because the event table contains five active venues rather than one, a single static distance channel is not sufficient. \tbd{[DECISION: either encode distance to the currently active venue as a node-time feature, aggregate overlapping venue effects explicitly!!.]}
+
+\subsection{Event-centric evaluation protocol}
+\label{sec:protocol}
+
+For each horizon we report MAE, RMSE, and masked MAPE on (i) the full test set, (ii) scheduled-event windows, (iii) adverse-weather windows, (iv) their union, and (v) the complement, which represents routine conditions. Every window is built only from information available at forecast issue time. Errors are additionally grouped into venue-distance bins, and predicted congestion-onset times are compared with observed ones. As a cross-check we relate our exogenous windows to the endogenous sudden-event measure of Kralj et al.~\shortcite{kralj2025pruning}. \tbd{[TODO: fix event-window boundaries, precipitation thresholds, overlap handling, distance-bin edges, the congestion speed threshold, onset matching tolerance, and minimum sample counts, and freeze them before reading any test result.]}
+
+\subsection{Decision layer}
+
+The operational question is whether to activate an event signal plan for sensors near a venue. A forecast-based policy acts when predicted congestion crosses a threshold with enough lead time; a reactive policy acts only once congestion is observed. False alarms and misses carry asymmetric costs, since unnecessary preparation and delayed egress management have different consequences. \tbd{[TODO: define the action threshold, lead time, spatial scope, and the false-alarm to miss cost ratio.]}
+
+\section{Experiment}
+
+\subsection{Datasets and descriptive statistics}
+
+The study covers 1 January to 30 June 2017 in the San Francisco Bay Area. Table~\ref{tab:data} lists the three sources; Figure~\ref{fig:map} shows where the sensors, venues, and weather stations sit.
+
+\begin{table}[t]
+\centering
+\small
+\begin{tabular}{@{}p{0.19\columnwidth}p{0.30\columnwidth}p{0.36\columnwidth}@{}}
+\toprule
+Source & Size & Variables \\
+\midrule
+PEMS-BAY traffic \cite{li2018dcrnn,augmentedpemsbay} & 325 sensors, 52,116 5-min steps & speed, sensor metadata, road distances \\
+\addlinespace
+Weather \cite{zippenfenig2023openmeteo} & 4,344 hourly rows, complete & temperature, precipitation, wind speed \\
+\addlinespace
+Scheduled events & 149 events, complete & start/end, venue, coordinates, attendance, type \\
+\bottomrule
+\end{tabular}
+\caption{Data sources for January--June 2017. \tbd{Confirm the final weather source (Open-Meteo archive vs. ASOS stations SJC/NUQ merged by inverse-distance weighting) and cite source.}}
+\label{tab:data}
+\end{table}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{figures/fig1_map.pdf}
+\caption{Study area. Blue dots are the 325 PEMS-BAY sensors, which trace the freeway network of the southern Bay Area. Stars are sports venues, sized by capacity; filled stars host events during the study window. SAP Center and Avaya Stadium sit inside the sensor network, while the Oakland and San Francisco venues lie well outside it, which motivates the distance-to-venue channel. Triangles are the ASOS weather stations.}
+\label{fig:map}
+\end{figure}
+
+The event table holds 79 MLB, 34 NBA, 27 NHL, and 9 MLS events at AT\&T Park, Oakland Coliseum, Oracle Arena, Avaya Stadium, and SAP Center. Expected attendance ranges from 10,292 to 42,862 with a mean near 24,282. Figure~\ref{fig:timeline} shows when these events fall relative to the chronological split: every MLB game lies in April or later, so the validation and test periods are baseball-heavy while the training period is dominated by NBA and NHL games. Any conclusion about event-window performance has to keep this composition shift in mind.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{figures/fig2_event_timeline.pdf}
+\caption{All 149 scheduled events by venue (rows ordered north to south as in Figure~\ref{fig:map}), colored by league and sized by expected attendance. Dashed lines mark the chronological 70/10/20 split. The MLB season starts in April, so event types are distributed unevenly across the three subsets.}
+\label{fig:timeline}
+\end{figure*}
+
+In the hourly weather table, temperature spans 0.7 to 39.0\,$^\circ$C, precipitation reaches 7.3\,mm per hour, and wind peaks at 37.5\,km/h. There are 686 hours with positive precipitation, 194 of them with at least 1\,mm. Figure~\ref{fig:weather} in the appendix shows the seasonal pattern: the wet weeks cluster in January and February, including the storm sequence around 20 February 2017, and rain becomes rare after April. Adverse-weather windows therefore concentrate in the training period, mirroring the event-side imbalance in the opposite direction.
+
+Figure~\ref{fig:impact} in the appendix previews the phenomenon the model is supposed to capture. Around SAP Center, the sensors most affected by hockey games run about 4\,mph slower than the weekday-matched baseline right after the typical game end, and the spread across event days widens through the whole evening. The mean effect is modest; the variance is not. This is precisely the pattern that average test-set error hides.
+
+\subsection{Preprocessing}
+
+For the speed-only baseline, the adjacency matrix is built from the road-distance file with the threshold-ed Gaussian kernel, speeds are ordered by sensor identifier, small gaps are interpolated, and 12-to-12 windows are sliced. The 70/10/20 split happens before normalization; training batches are shuffled, but no sample crosses a split boundary. The PEMS-BAY time axis skips the daylight-saving gap on 12 March 2017, and weather and event records must respect the same axis. For the conditioned model, the remaining pipeline aligns weather and events to the 5-minute grid, adds calendar features, builds the venue-distance representation, assembles the $[52{,}116\times325\times9]$ tensor, and normalizes continuous channels with training statistics. \tbd{[TODO: document timezone handling, per-variable interpolation rules, event-window mapping with any pre/post buffers, overlap rules, and any info on data leakage]}
+
+\subsection{Setup and baselines}
+
+The baseline notebook ran with Python 3.13.15, PyTorch 2.11.0 with CUDA 12.8, and one NVIDIA A100 40\,GB GPU; final configurations use seeds 42, 43, and 44. Two trivial baselines frame the learned models: persistence repeats the last observed speed across the horizon, and the historical average predicts the mean speed for each sensor and calendar slot from training data alone. DCRNN remains optional and time-boxed; it enters the comparison only if a faithful run completes. \tbd{[TODO: implement both trivial baselines; report runtimes and selected epochs for all models.]}
+
+\subsection{Metrics}
+
+With $\mathcal{M}$ the evaluated prediction set, $y_i$ observed and $\hat y_i$ predicted speed, all after de-normalization:
+\begin{equation}
+\operatorname{MAE}=\frac{1}{|\mathcal{M}|}\sum_{i\in\mathcal{M}}\left|\hat y_i-y_i\right|,
+\end{equation}
+\begin{equation}
+\operatorname{RMSE}=\sqrt{\frac{1}{|\mathcal{M}|}\sum_{i\in\mathcal{M}}\left(\hat y_i-y_i\right)^{2}},
+\end{equation}
+\begin{equation}
+\operatorname{MAPE}=\frac{100}{|\mathcal{M}'|}\sum_{i\in\mathcal{M}'}\frac{\left|\hat y_i-y_i\right|}{\left|y_i\right|},
+\end{equation}
+where $\mathcal{M}'=\{i\in\mathcal{M}:|y_i|>1\text{ mph}\}$ masks near-zero speeds. Metrics are reported at steps 3, 6, and 12, i.e., 15, 30, and 60 minutes. \tbd{[TODO: add definitions for onset error, the sudden-event cross-check, and the decision cost once their implementations are frozen.]}
+
+\subsection{Speed-only STGCN reproduction}
+
+Table~\ref{tab:repro} compares our three-seed reproduction with the STGCN values that Wu et al.~\shortcite{wu2019graphwavenet} report for PEMS-BAY. The gap stays within 0.1\,mph MAE at every horizon, which we take as evidence that the loader, graph, and training loop are sound. These numbers say nothing yet about anomalous windows: the model sees only speed, and the metrics average over the full test set.
+
+\begin{table}[t]
+\centering
+\small
+\setlength{\tabcolsep}{4.5pt}
+\begin{tabular}{@{}lcccccc@{}}
+\toprule
+ & \multicolumn{2}{c}{MAE (mph)} & \multicolumn{2}{c}{RMSE (mph)} & \multicolumn{2}{c}{MAPE (\%)} \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(l){6-7}
+Horizon & ours & ref. & ours & ref. & ours & ref. \\
+\midrule
+15 min & 1.44 & 1.36 & 3.06 & 2.96 & 3.03 & 2.90 \\
+30 min & 1.93 & 1.81 & 4.36 & 4.27 & 4.35 & 4.17 \\
+60 min & 2.58 & 2.49 & 5.83 & 5.69 & 6.25 & 5.79 \\
+\bottomrule
+\end{tabular}
+\caption{Speed-only STGCN on PEMS-BAY: mean over seeds 42--44 (standard deviations are at most 0.01 for MAE and RMSE and 0.05 for MAPE) against the reference values of Wu et al.~(2019). \tbd{[VERIFY: re-run all three seeds from a clean environment and export predictions; the current archive holds only the seed-42 checkpoint.]}}
+\label{tab:repro}
+\end{table}
+
+\subsection{Main comparison}
+
+Table~\ref{tab:main} is the central result table. Its rows follow the feature ablation: speed only, then calendar, weather, and event information added step by step, up to the full nine-channel input. Anomaly-window columns use the exogenous windows of Section~\ref{sec:protocol}.
+
+\begin{table*}[t]
+\centering
+\small
+\begin{tabular}{@{}lcccccc@{}}
+\toprule
+ & \multicolumn{3}{c}{Full test set, MAE (mph)} & \multicolumn{3}{c}{60-min window MAE (mph)} \\
+\cmidrule(lr){2-4}\cmidrule(l){5-7}
+Model & 15 min & 30 min & 60 min & Event & Weather & Routine \\
+\midrule
+Persistence & \tbd{--} & \tbd{--} & \tbd{--} & \tbd{--} & \tbd{--} & \tbd{--} \\
+Historical average & \tbd{--} & \tbd{--} & \tbd{--} & \tbd{--} & \tbd{--} & \tbd{--} \\
+\addlinespace
+Traffic only (replication) & 1.44 & 1.93 & 2.58 & \tbd{--} & \tbd{--} & \tbd{--} \\
+Traffic + weather & \tbd{--} & \tbd{--} & \tbd{--} & \tbd{--} & \tbd{--} & \tbd{--} \\
+Traffic + event activity/distance & \tbd{--} & \tbd{--} & \tbd{--} & \tbd{--} & \tbd{--} & \tbd{--} \\
+Traffic + event + attendance & \tbd{--} & \tbd{--} & \tbd{--} & \tbd{--} & \tbd{--} & \tbd{--} \\
+All variables & \tbd{--} & \tbd{--} & \tbd{--} & \tbd{--} & \tbd{--} & \tbd{--} \\
+\bottomrule
+\end{tabular}
+\caption{Main comparison (mean over three seeds). Rows add feature groups cumulatively to the STGCN backbone; the two trivial baselines frame the learned models. Window columns report 60-minute MAE inside scheduled-event windows, adverse-weather windows, and the routine complement. \tbd{[TODO: fill all cells; add RMSE and masked MAPE in a compact secondary table; mark the best value per column only after checking seed variance.]}}
+\label{tab:main}
+\end{table*}
+
+\subsection{Planned analyses}
+
+\tbd{[RESULTS PENDING. The following analyses are specified and will fill this subsection: (1) anomaly-window comparison with sample counts per window type; (2) the cumulative feature ablation of Table~\ref{tab:main}; (3) MAE and observed congestion magnitude against distance from the active venue, with confidence intervals; (4) signed and absolute congestion-onset error; (5) forecast-triggered versus reactive policies under several false-alarm to miss cost ratios; (6) one representative event, weather, and routine example, selected by a stated rule rather than by hand. If space runs short, the ablation, the anomaly breakdown, and one spatial analysis take priority; DCRNN and the sudden-event cross-check are secondary.]}
+
+\section{Conclusion}
+
+This paper frames traffic shockwave forecasting as an evaluation problem rather than an architecture problem. A speed-only STGCN reproduction on PEMS-BAY comes within 0.1\,mph MAE of published reference values, and six months of aligned event and weather records are in place, with descriptive analysis showing a post-game slowdown near SAP Center and a strong seasonal split between wet and dry months. The conditioned model and the window-based evaluation will decide whether exogenous context helps exactly where forecasts earn their keep. \tbd{[we need to replace this with the quantitative answer to both research questions, the main limitation, and one sentence of future work once results exist.]}
+
+\clearpage
+\section{Appendix: Supplementary Descriptive Figures}
+
+\tbd{[TEMPORARY APPENDIX. These two descriptive figures were floating against the References with no context, so they are parked here for now. Before the final version, decide whether to move them inline into Section~4, keep them in an appendix, or cut them to stay within the six-page limit.]}
+
+Figures~\ref{fig:weather} and~\ref{fig:impact} support the dataset description in Section~4. The first summarizes the weather over the six-month study period, and the second shows the observed speed drop near SAP Center on event evenings.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\columnwidth]{figures/fig4_weather.pdf}
+\caption{Daily weather over the study period: mean temperature with the daily min--max band, precipitation totals, and mean wind speed with daily maxima. Shaded columns mark the 19 days with at least 10\,mm of rain; they concentrate in the first two months.}
+\label{fig:weather}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\columnwidth]{figures/fig3_event_impact.pdf}
+\caption{Observed mean speed by time of day near SAP Center: 25 evening event days against weekday-matched non-event days, for the five most affected of the 23 sensors within 2\,km of the venue. Bands show one standard deviation across days. Speeds drop after the typical 19:30--22:00 game window, and event days vary far more than routine ones.}
+\label{fig:impact}
+\end{figure}
+
+\fontsize{9.5pt}{10.5pt}\selectfont
+\bibliography{references}
+\bibliographystyle{aaai}
+
+\end{document}
