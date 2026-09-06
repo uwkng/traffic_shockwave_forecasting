@@ -145,7 +145,7 @@ records the counts.
 ### Start here
 
 ```bash
-git fetch && git checkout data_pipeline
+git fetch && git checkout mei_modeling
 pip install numpy pandas pyyaml requests        # pipeline
 pip install torch scipy                         # training only
 
