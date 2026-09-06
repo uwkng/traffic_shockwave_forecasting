@@ -16,6 +16,7 @@ configurations** = 9 variants x 3 rolling folds x 3 seeds.
 | alarm counts and the cost sweep | `results/decision__fold0*.json` |
 | the tables that needed no GPU | `notes/paper_tables.md` |
 | the 87 prediction files (8.1 GB) | `results_bundle_v2_diffusion.tgz`, NOT in git - ask A |
+| **the write-up** | **`paper/main.pdf`**, source in `paper/main.tex` |
 
 Start with `results/README.md`. It explains the problem, the configurations and
 every column of `results_main.csv` in plain language, and it names the json field
