@@ -40,7 +40,12 @@ def load_predictions(split: str) -> dict[str, list[pathlib.Path]]:
     """Group prediction files by model name, collapsing seeds together."""
     by_model = collections.defaultdict(list)
     for f in sorted(PRED.glob(f"*__{split}*.npz")):
-        name = re.sub(r"__seed\d+$", "", f.stem.replace(f"__{split}", ""))
+        # NOT anchored with $: a run tagged `__weighted` or `__diffusion`
+        # carries a suffix AFTER the seed, and an anchored pattern left every
+        # such run as its own single-seed "model" - 0_speed__seed42__weighted,
+        # __seed43__weighted, __seed44__weighted - so the seed spread silently
+        # became three separate rows with sd 0.
+        name = re.sub(r"__seed\d+(?=__|$)", "", f.stem.replace(f"__{split}", ""))
         by_model[name].append(f)
     return dict(by_model)
 
