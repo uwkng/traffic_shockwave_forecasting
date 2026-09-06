@@ -9,6 +9,8 @@ Everything here comes from one experiment run on 2026-09-05.
 | `results_main_COLUMNS.csv` | what each column of that table means, in one sentence each |
 | `report__fold0*.json` | the same numbers broken down by time period, with standard deviations |
 | `decision__fold0*.json` | how often each model raised an alarm, and how often it was wrong |
+| `figures/spacetime_101-N_*.png` | the picture of a shockwave — see section 10 |
+| `figures/propagation_ratio.png` | the measurement behind `propagation_fidelity` |
 
 ---
 
@@ -175,3 +177,27 @@ before any model was trained.
 Before adding anything, we reproduced the plain speed-only STGCN under the conventional
 setup and got **1.44 / 1.93 / 2.58 mph** at 15/30/60 minutes, against the published
 **1.36 / 1.81 / 2.49**. Within 0.1 mph at every horizon — the pipeline is sound.
+
+---
+
+## 10. The picture
+
+`figures/spacetime_101-N_2017-03-24.png` is the one figure worth showing.
+
+Read it like this: **x is position along US-101 north** in road order, so left is
+upstream and right is downstream. **y is time of day**, 05:00 at the bottom.
+**Colour is speed** — green is free flow, red is a jam.
+
+Three panels: what actually happened, then what the speed-only model forecast
+60 minutes ahead, then the all-channel model with the weighted loss.
+
+A jam that sat still would appear as a **vertical** red bar. A jam that travels
+backwards up the road appears as a band **leaning to the upper left** — later in
+time, further upstream. That lean is the shockwave, and it is what
+`propagation_fidelity` measures numerically.
+
+The three days were chosen by rainfall during the weekday peak inside each test
+block, before looking at any model output. Holidays are excluded from that
+choice on purpose: the first version of the selector returned Presidents' Day
+for the first block, which is the wettest commute-hour day there and has no
+commute at all — US holidays run +9.50 mph in the morning peak.
