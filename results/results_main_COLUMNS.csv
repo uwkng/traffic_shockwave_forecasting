@@ -1,19 +1,31 @@
 column,what it means,unit
-model,the configuration name used everywhere in this repo,
-description,"what was added, in words",
+model,the configuration name,
+description,"what it is, in words",
+evaluation,WHICH EXPERIMENT THE ROW BELONGS TO. Rows are only comparable within the same value. 'rolling folds 00-02 (this work)' = our main experiment. 'conventional 70/10/20' = the standard chronological split used by the literature,
 input_channels,"how many input channels the model reads. 1 = speed only, 11 = everything",C
 graph_operator,Chebyshev = direction-blind (the published STGCN). diffusion = keeps upstream and downstream separate,
-loss,"L1 = plain mean absolute error. weighted L1 = the same, but errors at low speed count more",
-parameters,"trainable parameters. All models are within 20% of each other, so nothing here is won by size",count
-MAE_15min,average error when predicting 15 minutes ahead. LOWER IS BETTER,mph
-MAE_30min,"same, 30 minutes ahead",mph
-MAE_45min,"same, 45 minutes ahead",mph
-MAE_60min,"same, 60 minutes ahead. This is the column the literature reports",mph
-MAE_adverse_weather_60min,error only during rain (>=0.51 mm). 51 rain spells across the three test blocks,mph
-MAE_rain_x_commute_60min,error only when it rains AND it is the weekday commute peak. This is where errors are largest,mph
-MAE_event_egress_60min,"error only in the hour after a big fixture ends. NOTE: this reads LOW for everyone because egress is 21:30-23:00 on an empty road, not because events are easy",mph
-propagation_fidelity,does the model reproduce a shockwave travelling BACKWARDS along the road? Observed reality = 1.683. 1.0 would mean the model has no sense of direction at all. HIGHER IS BETTER,ratio
-propagation_sd,spread of that ratio over the 9 runs (3 folds x 3 seeds),ratio
-onset_recall,"of all the congestion onsets that really happened, what fraction did the model flag? HIGHER IS BETTER",fraction
-false_alarms,how many times it flagged an onset that did not happen. LOWER IS BETTER. Read together with recall - one can always be bought with the other,count
-epochs_run,training epochs before early stopping,count
+loss,L1 = plain mean absolute error. weighted L1 = the same but errors at low speed count more,
+parameters,"trainable parameters. All our models are within 20% of each other, so nothing here is won by size",count
+MAE_15min,"average error, 15 minutes ahead. LOWER IS BETTER",mph
+RMSE_15min,"root mean squared error, 15 min. Punishes large errors more than MAE",mph
+MAPE_15min,"mean absolute percentage error, 15 min. Cells below 1 mph are masked out",%
+MAE_30min,"average error, 30 minutes ahead",mph
+RMSE_30min,"root mean squared error, 30 min",mph
+MAPE_30min,"mean absolute percentage error, 30 min",%
+MAE_60min,"average error, 60 minutes ahead. THIS IS THE COLUMN THE LITERATURE REPORTS",mph
+RMSE_60min,"root mean squared error, 60 min",mph
+MAPE_60min,"mean absolute percentage error, 60 min",%
+MAE_45min,"average error, 45 minutes ahead. Included because a 60-min row is dominated by free flow",mph
+MAE_advWx_15min,"error during rain (>=0.51 mm), 15 min ahead. 51 rain spells across the three test blocks",mph
+MAE_advWx_30min,"same, 30 min ahead",mph
+MAE_advWx_60min,"same, 60 min ahead",mph
+MAE_rainXcmt_15min,"error when it rains AND it is the weekday commute peak, 15 min ahead. This is where the errors are largest",mph
+MAE_rainXcmt_30min,"same, 30 min ahead",mph
+MAE_rainXcmt_60min,"same, 60 min ahead",mph
+MAE_egress_15min,"error in the hour after a big fixture ends, 15 min ahead. READS LOW FOR EVERYONE because egress is 21:30-23:00 on an empty road - it is the clock, not the fixture",mph
+MAE_egress_30min,"same, 30 min ahead",mph
+MAE_egress_60min,"same, 60 min ahead",mph
+propagation_fidelity,does the model reproduce a shockwave travelling BACKWARDS along the road? Observed reality = 1.683. 1.0 would mean no sense of direction at all. HIGHER IS BETTER. Measured on the 60-min forecasts,ratio
+propagation_sd,spread of that ratio across the 9 runs (3 folds x 3 seeds),ratio
+onset_recall,"of the congestion onsets that really happened, what fraction did the model flag? HIGHER IS BETTER",fraction
+false_alarms,"flags with no matching onset. LOWER IS BETTER, but read it with recall - one can always be bought with the other",count

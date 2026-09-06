@@ -9,7 +9,7 @@ Everything here comes from one experiment run on 2026-09-05.
 | `results_main_COLUMNS.csv` | what each column of that table means, in one sentence each |
 | `report__fold0*.json` | the same numbers broken down by time period, with standard deviations |
 | `decision__fold0*.json` | how often each model raised an alarm, and how often it was wrong |
-| `figures/spacetime_101-N_*.png` | the picture of a shockwave — see section 10 |
+| `figures/spacetime_101-N_*.png` | the picture of a shockwave — see section 11 |
 | `figures/propagation_ratio.png` | the measurement behind `propagation_fidelity` |
 
 ---
@@ -42,27 +42,75 @@ The problem this project is about is simple:
 
 So we do not report one number. We report five, and we check whether they agree.
 
-## 3. What we added to the model
+## 3. The 11 channels
 
-The published STGCN sees **only speed**. We added channels one at a time:
+The published STGCN reads **one** channel: speed. We built a tensor of eleven, once,
+and every configuration selects columns from that same tensor — so all of them share
+the same samples, the same fold boundaries and the same scaler, and their errors are
+directly comparable. The definition lives in `src/contract.py`.
 
-| configuration | what the model can see |
-|---|---|
-| `0_speed` | speed only — this is the published baseline |
-| `1_traffic` | + **occupancy** (what fraction of time a car sits over the sensor — this is density, and density leads speed) |
-| `3_weather` | + temperature, rainfall, wind |
-| `5_event_geo_att` | + distance to each stadium, whether an event is on, how many people are attending |
-| `6_all` | everything, 11 channels |
+| # | channel | group | varies over | where it comes from |
+|---|---|---|---|---|
+| 0 | **speed** | speed | node × time | PEMS-BAY. This is also the prediction target |
+| 1 | **occupancy** | occupancy | node × time | PEMS-BAY. Fraction of the 5 minutes a vehicle sat over the loop — this is *density*, and density moves before speed does |
+| 2 | time of day | calendar | time only | the clock |
+| 3 | day of week | calendar | time only | the clock |
+| 4 | is holiday | calendar | time only | 5 US federal holidays in the period |
+| 5 | temperature | weather | time only | ASOS stations SJC + NUQ |
+| 6 | precipitation | weather | time only | ASOS `p01i` |
+| 7 | wind speed | weather | time only | ASOS |
+| 8 | **distance to venue** | event\_geo | node only | great-circle km from each sensor to the nearest active venue. Static |
+| 9 | event active decay | event\_geo | node × time | is a fixture on, weighted by `exp(-distance / 4 km)` |
+| 10 | event load | event\_att | node × time | the same, but multiplied by `attendance / 20,000`, and only for fixtures with ≥15,000 attendees |
 
-Two further changes, each touching exactly one thing:
+**The column that matters most is "varies over".** Channels 2–7 are a single number
+copied to all 325 sensors. Channels 8–10 are different for every sensor. Section 5(b)
+shows that this distinction, not the number of channels, decides the result.
 
-- **congestion-weighted loss** — during training, count errors at low speed more heavily.
-  Nothing else changes. The reported numbers are still ordinary unweighted MAE.
-- **directed operator** — the published model is forced to treat "the sensor ahead of me"
-  and "the sensor behind me" as the same kind of neighbour. We replaced that part so it
-  can tell them apart.
+Why ≥15,000 on channel 10: below that threshold the measured speed drop in the egress
+hour is **+0.35 ± 0.41 mph** — the wrong sign. Above it, the effect is real
+(t = −9.76). The threshold was measured on the data before any model was trained.
 
-## 4. The five things we measure
+## 4. Which configurations we trained, and why not the others
+
+`src/contract.py` defines a seven-rung ablation ladder. **We trained five of them**,
+plus two variants of the headline pair:
+
+| trained | configuration | what it isolates |
+|---|---|---|
+| ✅ | `0_speed` | the published baseline. Everything is measured against this |
+| ✅ | `1_traffic` | + occupancy. The largest single channel we measured (+0.153 incremental R²) |
+| ✅ | `3_weather` | speed + occupancy + the 3 weather channels |
+| ✅ | `5_event_geo_att` | speed + occupancy + the 3 event channels. **Same channel count and same parameter count as `3_weather`** — that pairing is the controlled comparison |
+| ✅ | `6_all` | all 11 |
+| ✅ | `0_speed` / `6_all` + **weighted loss** | changes only the training objective |
+| ✅ | `0_speed` / `6_all` + **directed operator** | changes only the graph convolution |
+| ❌ | `2_calendar` | speed + occupancy + calendar |
+| ❌ | `4_event_geo` | event geometry *without* attendance |
+
+**Why the two were dropped:** GPU budget. Each configuration costs 9 runs (3 folds ×
+3 seeds), and the queue in `scripts/run_experiments.sh` is ordered so that the headline
+pair finishes first and every later batch is optional. `2_calendar` and `4_event_geo`
+were the last two and did not run.
+
+That is a real gap, and it costs one specific comparison: `4_event_geo` versus
+`5_event_geo_att` would have isolated **whether crowd size carries information beyond
+the mere fact that a fixture is happening**. We have that answer from the raw data
+(activity alone reaches t = −1.02, not significant; attendance-weighted reaches
+t = −9.76) but not from a trained model.
+
+### The two changes that are not channels
+
+- **congestion-weighted loss** — during training, errors at low speed count more:
+  weight `1 + max(0, (60 − speed)/20)`, so 1.0 at free flow, 1.5 at 50 mph, 2.5 at 30.
+  Nothing else changes, and every reported number is still ordinary *unweighted* MAE.
+- **directed operator** — the published model is forced to treat "the sensor ahead of
+  me" and "the sensor behind me" as the same kind of neighbour, because Chebyshev graph
+  convolution needs a symmetric matrix. We swapped in the DCRNN/Graph WaveNet dual
+  random walk, which keeps the two directions apart. 5 supports instead of 3,
+  +16,384 parameters, no other change.
+
+## 5. The five things we measure
 
 | column in the CSV | the question it answers |
 |---|---|
@@ -72,7 +120,7 @@ Two further changes, each touching exactly one thing:
 | `onset_recall` | of the traffic breakdowns that really happened, what share did it flag |
 | `false_alarms` | how often it cried wolf |
 
-## 5. The result
+## 6. The result
 
 **No two of those five metrics pick the same winner.**
 
@@ -122,7 +170,7 @@ An average-error-only report would have logged that as a small improvement.
 
 ---
 
-## 6. How to read the table without being misled
+## 7. How to read the table without being misled
 
 **Compare down a column, never across.** The columns are in different units and
 different regimes.
@@ -144,7 +192,7 @@ across the 9 runs, not across rows.
 
 ---
 
-## 7. Which time periods, and why
+## 8. Which time periods, and why
 
 We train and test on three consecutive 28-day blocks, each testing on the month after
 it trained. The reason is in the data:
@@ -161,7 +209,7 @@ period holds 73% of the training cost and cannot say anything about weather at a
 excluded it. The exclusion uses only the calendar and the weather record, both known
 before any model was trained.
 
-## 8. What we could not measure
+## 9. What we could not measure
 
 - **Warning time.** The natural operational number — how many minutes earlier than a
   simple reactive rule the model raises the alarm — is **0 minutes for every model**,
@@ -172,15 +220,54 @@ before any model was trained.
   **3 times in six months, 18 five-minute steps total**, one of them a single step.
   It is the natural headline for a paper like this. On this data it would be noise.
 
-## 9. Sanity check
+## 10. How we compare against STGCN, DCRNN and Graph WaveNet
 
-Before adding anything, we reproduced the plain speed-only STGCN under the conventional
-setup and got **1.44 / 1.93 / 2.58 mph** at 15/30/60 minutes, against the published
-**1.36 / 1.81 / 2.49**. Within 0.1 mph at every horizon — the pipeline is sound.
+`results_main.csv` now carries the published PEMS-BAY numbers as extra rows, taken from
+Wu et al. (2019), *Graph WaveNet for Deep Spatial-Temporal Graph Modeling*, Table 2.
+
+**Read the `evaluation` column first. Rows are only comparable within the same value.**
+
+| evaluation | which rows | MAE at 15 / 30 / 60 min |
+|---|---|---|
+| conventional 70/10/20 (published) | Graph WaveNet | 1.30 / 1.63 / **1.95** |
+| conventional 70/10/20 (published) | DCRNN | 1.38 / 1.74 / 2.07 |
+| conventional 70/10/20 (published) | STGCN | 1.36 / 1.81 / 2.49 |
+| conventional 70/10/20 (published) | WaveNet | 1.39 / 1.83 / 2.35 |
+| conventional 70/10/20 (published) | FC-LSTM | 2.05 / 2.20 / 2.37 |
+| conventional 70/10/20 (published) | ARIMA | 1.62 / 2.33 / 3.38 |
+| conventional 70/10/20 (**this work**) | **STGCN, our reproduction** | **1.44 / 1.93 / 2.58** |
+| rolling folds 00-02 (this work) | everything else in the file | 1.37–1.57 / 1.79–2.16 / 2.30–3.04 |
+
+### The reproduction is the comparable row, and it lands
+
+Our speed-only STGCN under the **same** split the literature uses gives
+**1.44 / 1.93 / 2.58** against the published **1.36 / 1.81 / 2.49** — within 0.1 mph at
+every horizon. The loader, the graph, the sample slicing and the training loop are sound.
+That is the only claim this comparison supports, and it is the claim we need.
+
+### Our main rows are NOT comparable to the published ones
+
+They are trained and tested on three 28-day rolling blocks, not on the standard
+70/10/20 chronological split. Different training data, different test data, different
+amount of it. A number from that experiment placed beside Graph WaveNet's 1.95 would
+mean nothing, in either direction.
+
+We use the rolling folds anyway, for the reason in section 8: **the conventional split
+has zero rain in its test block.** It is the better split for reproducing a published
+number and a useless one for asking whether weather information helps.
+
+### And Graph WaveNet is not a competitor here
+
+It is a stronger forecaster than STGCN on aggregate error — 1.95 against 2.49 mph at
+60 minutes, a 22% improvement, and we do not dispute it. But every number in that
+column is aggregate error, and section 6 is the finding that aggregate error ranks
+models differently from every operational metric we measured. Swapping in a stronger
+backbone would change the aggregate column and leave that finding untouched. We kept
+STGCN unchanged on purpose: the contribution is the evaluation protocol, not the model.
 
 ---
 
-## 10. The picture
+## 11. The picture
 
 `figures/spacetime_101-N_2017-03-24.png` is the one figure worth showing.
 
