@@ -135,11 +135,12 @@ def congestion_weighted_l1(pred_mph, true_mph):
 
 
 def train_one(rung, split, seed, cfg, device, epochs=None, quiet=False,
-              loss_name="l1"):
+              loss_name="l1", future_covariates=False):
     # NOT called `loss`: the training loop below binds `loss` to a Tensor every
     # step, and a shadowed name here silently put that Tensor into the JSON.
     set_seed(seed)
-    loaders, adj, scaler = build_loaders(rung=rung, split=split)
+    loaders, adj, scaler = build_loaders(rung=rung, split=split,
+                                         future_covariates=future_covariates)
     model = build_model(adj, loaders["c_in"], cfg,
                         contract.INPUT_WINDOW, contract.HORIZON, device)
     n_par = sum(p.numel() for p in model.parameters())
@@ -155,9 +156,15 @@ def train_one(rung, split, seed, cfg, device, epochs=None, quiet=False,
     crit = nn.L1Loss() if loss_name == "l1" else congestion_weighted_l1
 
     gc = cfg["model"]["stgcn"].get("graph_conv", "chebyshev")
+    # Every non-default axis gets a suffix, or a run silently overwrites the
+    # baseline it is supposed to be compared against. `__future` was added when
+    # the known-future covariates became a separate experiment: without it,
+    # 3_weather with lookahead lands on exactly the filename 3_weather without
+    # it already occupies, and the control disappears.
     tag = (f"{rung}__{split}__seed{seed}"
            + ("" if loss_name == "l1" else "__weighted")
-           + ("" if gc == "chebyshev" else f"__{gc}"))
+           + ("" if gc == "chebyshev" else f"__{gc}")
+           + ("__future" if loaders["future_covariates"] else ""))
     CKPT.mkdir(exist_ok=True)
     ckpt = CKPT / f"{tag}.pt"
     if not quiet:
@@ -235,6 +242,13 @@ def main() -> int:
                     help="override model.stgcn.graph_conv. `diffusion` uses the "
                          "directed dual random walk instead of the symmetric "
                          "Chebyshev basis - see configs/default.yaml.")
+    ap.add_argument("--future-covariates", action="store_true",
+                    help="append the KNOWN-FUTURE value of the exogenous "
+                         "channels at t+HORIZON to each input step. Off by "
+                         "default: it changes the TASK, not just the model, and "
+                         "no published PEMS-BAY baseline has that information. "
+                         "Run both ways - the difference is the result. Output "
+                         "files gain a `__future` suffix so the pair survives.")
     ap.add_argument("--loss", choices=["l1", "weighted"], default="l1",
                     help="weighted = congestion-weighted L1; see the module "
                          "docstring. Off by default so rung 0 stays comparable "
@@ -264,7 +278,8 @@ def main() -> int:
         for i in range(n_seeds):
             results.append(train_one(args.rung, split, contract.SEED + i,
                                      cfg, device, args.epochs,
-                                     loss_name=args.loss))
+                                     loss_name=args.loss,
+                                     future_covariates=args.future_covariates))
 
     print(f"\n=== {args.rung}: test MAE / RMSE / MAPE, "
           f"mean +- sd over {n_seeds} seeds ===")

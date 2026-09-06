@@ -632,7 +632,44 @@ def main() -> int:
     print(f"  max {emeta['max_load']:.3f}, mean where active "
           f"{emeta['mean_load_where_active']:.3f}")
 
-    print("\n[6/6] writing")
+    print("\n[6/7] weather FORECAST (ECMWF IFS) -> traffic axis")
+    fc_path = pathlib.Path(cfg["data"]["raw_dir"]) / "weather" / "weather_forecast_hourly.csv"
+    forecast = None
+    if fc_path.exists():
+        # Joined BY LABEL onto the traffic axis, like every other source here -
+        # the axis is local wall-clock and is missing 2017-03-12 02:00..02:55.
+        # Hourly values are held across the twelve 5-min steps that follow, the
+        # same convention _parse_asos uses, so a forecast issued for 14:00
+        # applies to 14:00..14:55.
+        fc = (pd.read_csv(fc_path, parse_dates=["timestamp"])
+                .set_index("timestamp").sort_index())
+        fc5 = fc.reindex(time_index, method="ffill").bfill()
+        forecast = fc5[["temperature", "precipitation", "wind_speed"]].to_numpy(np.float32)
+        assert forecast.shape == (len(time_index), 3), forecast.shape
+        assert np.isfinite(forecast).all(), "non-finite forecast after alignment"
+        # Column order MUST match the order the weather channels appear in
+        # contract.CHANNELS (temperature 5, precipitation 6, wind_speed 7).
+        wx = [n for n, _ in contract.CHANNELS if n in
+              ("temperature", "precipitation", "wind_speed")]
+        assert wx == ["temperature", "precipitation", "wind_speed"], wx
+        # weather[] is [precip, temp, wind] as build_weather() writes it, while
+        # `forecast` is [temp, precip, wind] to match contract.CHANNELS order.
+        # features.py does the same remap; getting it wrong here compared
+        # temperature against rainfall and reported 6.3% agreement.
+        obs_ad = weather[:, 0] >= 0.51
+        fc_ad = forecast[:, 1] >= 0.51
+        tp = int((obs_ad & fc_ad).sum())
+        print(f"  {len(fc)} hourly rows -> {len(forecast)} 5-min steps")
+        print(f"  adverse steps: observed {obs_ad.sum():,}  forecast {fc_ad.sum():,}  "
+              f"both {tp:,}  agreement {100 * (obs_ad == fc_ad).mean():.1f}%")
+        print(f"  forecast recall of observed adverse steps: "
+              f"{100 * tp / max(int(obs_ad.sum()), 1):.1f}%")
+    else:
+        print(f"  {fc_path} absent - skipping "
+              f"(run acquire.fetch_weather_forecast() to enable --future-covariates "
+              f"on any rung containing weather)")
+
+    print("\n[7/7] writing")
     np.save(out / "time_index.npy", time_index.to_numpy())
     np.save(out / "sensor_ids.npy", np.array(sensor_ids))
     np.save(out / "speed.npy", speed)
@@ -644,6 +681,8 @@ def main() -> int:
     np.save(out / "event_active_decay.npy", event_active)
     np.save(out / "dist_to_venue.npy", dist)
     np.save(out / "adj_mx.npy", adj)
+    if forecast is not None:
+        np.save(out / "weather_forecast.npy", forecast)
 
     meta = {
         "generated": dt.datetime.now().isoformat(timespec="seconds"),
