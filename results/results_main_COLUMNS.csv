@@ -1,7 +1,7 @@
 column,what it means,unit
 model,the configuration name,
 description,"what it is, in words",
-evaluation,WHICH EXPERIMENT THE ROW BELONGS TO. Rows are only comparable within the same value. 'rolling folds 00-02 (this work)' = our main experiment. 'conventional 70/10/20' = the standard chronological split used by the literature,
+evaluation,WHICH EXPERIMENT THE ROW BELONGS TO. Rows are only comparable within the same value. 'rolling folds 00-02 (this work)' = our main experiment. 'conventional 70/10/20' = the standard chronological split used by the literature. NOTE: the 'STGCN (our reproduction)' row predates the scaled_laplacian fix in commit 5d2621e and has not been re-run - see README section 10,
 input_channels,"how many input channels the model reads. 1 = speed only, 11 = everything",C
 graph_operator,Chebyshev = direction-blind (the published STGCN). diffusion = keeps upstream and downstream separate,
 loss,L1 = plain mean absolute error. weighted L1 = the same but errors at low speed count more,

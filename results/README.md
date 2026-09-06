@@ -242,8 +242,22 @@ Wu et al. (2019), *Graph WaveNet for Deep Spatial-Temporal Graph Modeling*, Tabl
 
 Our speed-only STGCN under the **same** split the literature uses gives
 **1.44 / 1.93 / 2.58** against the published **1.36 / 1.81 / 2.49** — within 0.1 mph at
-every horizon. The loader, the graph, the sample slicing and the training loop are sound.
-That is the only claim this comparison supports, and it is the claim we need.
+every horizon.
+
+> ⚠️ **Provenance, and a caveat that has not been closed.** That row comes from
+> `notebooks/train_stgcn.ipynb` cell 13, three seeds (42/43/44), mean
+> 1.4381 ± 0.0023 / 1.928 / 2.578, run on **2026-09-04**. Commit `5d2621e`, on
+> **2026-09-05**, then fixed `scaled_laplacian`: `eigsh` assumes symmetry and does not
+> check it, so on the directed adjacency it returned λ_max = 1.2670 against a true
+> 1.0013 — the Chebyshev rescaling was **27% off** and the spectrum sat in [−1, 0.58]
+> instead of [−1, 1]. **The reproduction has not been re-run since that fix.** Only
+> `checkpoints/stgcn_seed42.pt` survives; the other two seeds' weights were not kept.
+>
+> The number is a real three-seed measurement and it does land within 0.1 mph. But it
+> cannot currently be read as "the graph code is sound", because the graph code changed
+> after it was taken. Re-running it is one command against the current code —
+> `python -m src.models.train --rung 0_speed --split single --seeds 3 --epochs 100` —
+> and costs about 45 minutes on an H200.
 
 ### Our main rows are NOT comparable to the published ones
 
