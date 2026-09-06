@@ -61,7 +61,16 @@ run 3_weather       3
 echo "###### batch 5: events, high-confidence fixtures only ######"
 run 5_event_geo_att 3
 
-echo "###### batch 6: congestion-weighted loss as an ablation dimension ######"
+echo "###### batch 6: DIRECTED graph operator ######"
+# The one structural criticism of using STGCN here: Chebyshev needs a symmetric
+# Laplacian, so the operator cannot tell upstream from downstream - while the
+# phenomenon in the title travels upstream 1.71x more often than downstream at
+# 15 min. `diffusion` swaps in the DCRNN/Graph WaveNet dual random walk on the
+# raw directed adjacency. 117k -> 150k parameters, no other change.
+run 0_speed         3 --graph-conv diffusion
+run 6_all           3 --graph-conv diffusion
+
+echo "###### batch 7: congestion-weighted loss as an ablation dimension ######"
 run 6_all           3 --loss weighted
 run 0_speed         3 --loss weighted
 
