@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import argparse
 import pathlib
+import re
 
 import matplotlib
 matplotlib.use("Agg")
@@ -71,19 +72,62 @@ def freeway_order(cfg, sensor_ids, freeway_dir: str) -> np.ndarray:
     return np.asarray(idx)
 
 
+def prediction_panel(files, horizon_key: str, n_times: int, n_nodes: int):
+    """[T, N] of the h-step-ahead forecast, on the SAME time grid as `speed`.
+
+    A prediction file is indexed by SAMPLE, not by timestep, and covers a whole
+    test block. `pred[i, h]` is the forecast for timestep `timesteps[i] + h`, so
+    it has to be scattered back onto the global axis before it can be drawn
+    beside the observed series. The first version of this module passed
+    `z["pred"][:, h]` straight into `imshow` next to one day of observations;
+    with `sharey=True` that squashed the observed panel into a sliver at the
+    bottom of the figure and captioned the result as a comparison.
+
+    Several files for the same model (the seeds) are averaged.
+    """
+    h = contract.EVAL_HORIZON_STEPS[horizon_key] - 1
+    total = np.zeros((n_times, n_nodes), np.float64)
+    count = np.zeros((n_times, 1), np.float64)
+    for f in files:
+        z = np.load(f)
+        ts = z["timesteps"] + h
+        keep = ts < n_times
+        total[ts[keep]] += z["pred"][keep, h]
+        count[ts[keep]] += 1.0
+    with np.errstate(invalid="ignore"):
+        out = total / np.where(count == 0, np.nan, count)
+    return out.astype(np.float32)
+
+
+def group_seeds(files):
+    """model name -> its files, collapsing __seedNN and __foldNN."""
+    import collections
+    by = collections.defaultdict(list)
+    for f in files:
+        name = pathlib.Path(f).stem
+        name = re.sub(r"__fold\d+", "", name)
+        name = re.sub(r"__seed\d+(?=__|$)", "", name)
+        by[name].append(f)
+    return by
+
+
 def spacetime(speed_panels: dict, nodes: np.ndarray, times: pd.DatetimeIndex,
               title: str, out: pathlib.Path):
     """One panel per series in `speed_panels` (name -> [T, N] on the same grid)."""
     n = len(speed_panels)
-    fig, axes = plt.subplots(1, n, figsize=(5.2 * n, 6.0), sharey=True,
+    fig, axes = plt.subplots(1, n, figsize=(3.6 * n, 5.4), sharey=True,
                              constrained_layout=True)
     axes = np.atleast_1d(axes)
     for ax, (name, arr) in zip(axes, speed_panels.items()):
-        im = ax.imshow(arr[:, nodes], aspect="auto", origin="lower",
-                       cmap=SPEED_CMAP, vmin=SPEED_VMIN, vmax=SPEED_VMAX,
-                       interpolation="nearest")
-        ax.set_title(name)
-        ax.set_xlabel("sensor, in road order  ->  direction of travel")
+        cmap = plt.get_cmap(SPEED_CMAP).copy()
+        cmap.set_bad("white")
+        im = ax.imshow(np.ma.masked_invalid(arr[:, nodes]), aspect="auto",
+                       origin="lower", cmap=cmap, vmin=SPEED_VMIN,
+                       vmax=SPEED_VMAX, interpolation="nearest")
+        ax.set_title(name, fontsize=9)
+    # one x label for the row: three overlapping copies is not three labels.
+    axes[len(axes) // 2].set_xlabel(
+        "sensor, in road order  ->  direction of travel")
     step = max(1, len(times) // 12)
     axes[0].set_yticks(np.arange(0, len(times), step))
     axes[0].set_yticklabels([t.strftime("%H:%M") for t in times[::step]])
@@ -164,6 +208,11 @@ def main() -> int:
     ap.add_argument("--to-hour", type=int, default=22)
     ap.add_argument("--predictions", nargs="*", default=[],
                     help="data/processed/predictions/*.npz to overlay")
+    ap.add_argument("--horizon", default="60min",
+                    choices=list(contract.EVAL_HORIZON_STEPS),
+                    help="which forecast horizon to draw")
+    ap.add_argument("--max-panels", type=int, default=4,
+                    help="refuse to draw more model panels than this")
     ap.add_argument("--auto", action="store_true",
                     help="ignore --date; draw one panel per rolling fold, each "
                          "on the wettest commute day inside that fold's TEST "
@@ -194,10 +243,19 @@ def main() -> int:
             print(f"  skipping {date}: not in the time axis")
             continue
         panels = {"observed": speed[sel]}
-        for f in args.predictions:
-            z = np.load(f)
-            panels[pathlib.Path(f).stem] = z["pred"][
-                :, contract.EVAL_HORIZON_STEPS["30min"] - 1]
+        grouped = group_seeds(args.predictions)
+        if len(grouped) > args.max_panels:
+            raise SystemExit(
+                f"{len(grouped)} models would give {len(grouped) + 1} panels. "
+                f"A space-time diagram is read by comparing two or three series "
+                f"side by side, not {len(grouped)}. Pass fewer files, or raise "
+                f"--max-panels deliberately.")
+        for name, files in grouped.items():
+            full = prediction_panel(files, args.horizon, len(ti), speed.shape[1])
+            if np.isnan(full[sel]).all():
+                print(f"  skipping {name} on {date}: no predictions cover it")
+                continue
+            panels[f"{name}\n({args.horizon} ahead)"] = full[sel]
         written.append(spacetime(
             panels, nodes, ti[sel],
             f"{args.freeway}, {date} - a band leaning backwards is a "

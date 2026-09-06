@@ -189,7 +189,13 @@ HORIZON = 12            # 12 steps = 60 min ahead       -> Y
 # free-flow). 15-30 min is also the operating window for the interventions the
 # proposal names - variable speed limits, ramp metering, en-route advisories.
 # Restore "60min": 12 here if a reviewer asks for it; nothing else changes.
-EVAL_HORIZON_STEPS = {"15min": 3, "30min": 6, "45min": 9}
+# 60min is back: the paper reports 15/30/60 so its table can be read against
+# the published PEMS-BAY row (Wu et al. 2019). 45min stays because the error a
+# 60-min row reports is dominated by free flow - a per-node AR(12) is out by
+# 17.56 mph below 35 mph at 60 min against 5.35 at 15, while its aggregate
+# column moves only 1.63 -> 3.20. Adding a key costs nothing: predictions
+# already carry all 12 steps, so this only chooses which get a column.
+EVAL_HORIZON_STEPS = {"15min": 3, "30min": 6, "45min": 9, "60min": 12}
 
 # A LONGER HORIZON IS THE OBVIOUS NEXT EXPERIMENT, and it is nearly free -
 # horizon only sizes the final Linear(64, HORIZON); the ST-Conv blocks operate
