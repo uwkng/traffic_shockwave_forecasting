@@ -9,37 +9,23 @@ configurations** = 9 variants x 3 rolling folds x 3 seeds.
 
 | you want | look at |
 |---|---|
-| the five results, in Chinese and English | `results/CORE_FINDINGS.md` |
-| every table, plus the caveats to say out loud | `results/RESULTS_SUMMARY.md` |
-| per-fold stratified numbers | `results/report__fold0*.{json,md}` |
-| confusion counts + the cost sweep | `results/decision__fold0*.json` |
+| **what we did and what the numbers mean** | **`results/README.md`** - start here |
+| **the one results table** | **`results/results_main.csv`** - opens in Excel |
+| what each column of that table means | `results/results_main_COLUMNS.csv` |
+| per-fold numbers with standard deviations | `results/report__fold0*.{json,md}` |
+| alarm counts and the cost sweep | `results/decision__fold0*.json` |
 | the tables that needed no GPU | `notes/paper_tables.md` |
 | the 87 prediction files (8.1 GB) | `results_bundle_v2_diffusion.tgz`, NOT in git - ask A |
 
-Every number in those files names the json field it comes from, so none of it
-has to be taken on trust.
+Start with `results/README.md`. It explains the problem, the configurations and
+every column of `results_main.csv` in plain language, and it names the json field
+behind each number.
 
-### The one thing to know before comparing against another split
-
-**A conventional chronological 70/10/20 split of PEMS-BAY 2017 H1 has ZERO
-adverse-weather episodes in its test block.** California's wet season is
-January to April, so any chronological split puts every rain spell in train.
-`src/data/split.py` prints this when it runs, and `data/processed/splits_meta.json`
-records it as `single.test.episodes_wx = 0`.
-
-That is why this branch reports rolling folds 00-02 and not the conventional
-split. Numbers from the two are not comparable on any weather question: one of
-them cannot answer it at all. They ARE comparable on aggregate error, and our
-speed-only reproduction under the conventional split (MAE 1.44 / 1.93 / 2.58 at
-15/30/60 min) sits within 0.1 mph of the published STGCN row in Wu et al. 2019.
-
-### Folds 03-05 are excluded on purpose
-
-They hold 73% of the total training compute and contain zero rain episodes and
-zero NHL fixtures in their test blocks, so they cannot inform either research
-question. The selection uses only schedule and weather content, which is known
-before any model is trained.
-
+Training and testing use three consecutive 28-day blocks (29 Jan - 23 Apr). The
+period after April is dry - zero rain spells - so it cannot inform the weather
+question and is not used. That selection uses only the calendar and the weather
+record, both known before any model was trained; `data/processed/splits_meta.json`
+records the counts.
 
 ## Pipeline Progress
 

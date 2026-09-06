@@ -1,0 +1,19 @@
+column,what it means,unit
+model,the configuration name used everywhere in this repo,
+description,"what was added, in words",
+input_channels,"how many input channels the model reads. 1 = speed only, 11 = everything",C
+graph_operator,Chebyshev = direction-blind (the published STGCN). diffusion = keeps upstream and downstream separate,
+loss,"L1 = plain mean absolute error. weighted L1 = the same, but errors at low speed count more",
+parameters,"trainable parameters. All models are within 20% of each other, so nothing here is won by size",count
+MAE_15min,average error when predicting 15 minutes ahead. LOWER IS BETTER,mph
+MAE_30min,"same, 30 minutes ahead",mph
+MAE_45min,"same, 45 minutes ahead",mph
+MAE_60min,"same, 60 minutes ahead. This is the column the literature reports",mph
+MAE_adverse_weather_60min,error only during rain (>=0.51 mm). 51 rain spells across the three test blocks,mph
+MAE_rain_x_commute_60min,error only when it rains AND it is the weekday commute peak. This is where errors are largest,mph
+MAE_event_egress_60min,"error only in the hour after a big fixture ends. NOTE: this reads LOW for everyone because egress is 21:30-23:00 on an empty road, not because events are easy",mph
+propagation_fidelity,does the model reproduce a shockwave travelling BACKWARDS along the road? Observed reality = 1.683. 1.0 would mean the model has no sense of direction at all. HIGHER IS BETTER,ratio
+propagation_sd,spread of that ratio over the 9 runs (3 folds x 3 seeds),ratio
+onset_recall,"of all the congestion onsets that really happened, what fraction did the model flag? HIGHER IS BETTER",fraction
+false_alarms,how many times it flagged an onset that did not happen. LOWER IS BETTER. Read together with recall - one can always be bought with the other,count
+epochs_run,training epochs before early stopping,count

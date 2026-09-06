@@ -1,0 +1,12 @@
+model,description,input_channels,graph_operator,loss,parameters,MAE_15min,MAE_30min,MAE_45min,MAE_60min,MAE_adverse_weather_60min,MAE_rain_x_commute_60min,MAE_event_egress_60min,propagation_fidelity,propagation_sd,onset_recall,false_alarms,epochs_run
+0_speed,STGCN speed only (published baseline),1,Chebyshev,L1,116940,1.392,1.865,2.214,2.502,2.743,5.349,1.307,1.375,0.097,0.702,1432,94
+1_traffic,plus occupancy,2,Chebyshev,L1,117388,1.371,1.81,2.116,2.369,2.576,5.147,1.25,1.452,0.096,0.726,1770,93
+3_weather,plus weather (temperature / precipitation / wind),5,Chebyshev,L1,118732,1.402,1.868,2.206,2.485,2.747,5.559,1.302,1.454,0.134,0.688,1381,77
+5_event_geo_att,plus event geometry and attendance,5,Chebyshev,L1,118732,1.37,1.789,2.07,2.303,2.534,4.991,1.239,1.324,0.034,0.752,1823,86
+6_all,all 11 channels,11,Chebyshev,L1,121420,1.395,1.83,2.124,2.361,2.716,5.283,1.406,1.389,0.078,0.738,1775,76
+0_speed__weighted,speed only + congestion-weighted loss,1,Chebyshev,weighted L1,116940,1.412,1.906,2.28,2.596,2.879,5.774,1.356,1.306,0.072,0.747,2353,64
+6_all__weighted,all channels + congestion-weighted loss,11,Chebyshev,weighted L1,121420,1.402,1.832,2.118,2.356,2.671,5.275,1.304,1.376,0.136,0.78,2445,70
+0_speed__diffusion,speed only + directed operator,1,diffusion (directed),L1,133324,1.39,1.864,2.213,2.503,2.741,5.372,1.304,1.246,0.067,0.701,1379,93
+6_all__diffusion,all channels + directed operator,11,diffusion (directed),L1,137804,1.39,1.82,2.108,2.338,2.708,5.418,1.329,1.315,0.061,0.74,1783,77
+persistence,persistence (trivial baseline),-,-,-,-,1.568,2.157,2.628,3.043,3.306,7.183,1.4,-,-,0.654,1748,-
+historical_average,historical average (trivial baseline),-,-,-,-,2.776,2.776,2.776,2.776,3.061,5.973,1.826,-,-,0.77,4772,-
