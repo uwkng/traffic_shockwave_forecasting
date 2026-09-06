@@ -1,7 +1,7 @@
 # Results — what we did and what the numbers mean
 
 Everything here comes from one experiment run on 2026-09-05.
-**81 trained models = 9 configurations × 3 time periods × 3 random seeds.**
+**99 trained models = 11 configurations × 3 time periods × 3 random seeds.**
 
 | file | what it is |
 |---|---|
@@ -71,43 +71,42 @@ Why ≥15,000 on channel 10: below that threshold the measured speed drop in the
 hour is **+0.35 ± 0.41 mph** — the wrong sign. Above it, the effect is real
 (t = −9.76). The threshold was measured on the data before any model was trained.
 
-## 4. Which configurations we trained, and why not the others
+## 4. The configurations
 
-`src/contract.py` defines a seven-rung ablation ladder. **We trained five of them**,
+`src/contract.py` defines a seven-rung ablation ladder. All seven were trained,
 plus two variants of the headline pair:
 
-| trained | configuration | what it isolates |
-|---|---|---|
-| ✅ | `0_speed` | the published baseline. Everything is measured against this |
-| ✅ | `1_traffic` | + occupancy. The largest single channel we measured (+0.153 incremental R²) |
-| ✅ | `3_weather` | speed + occupancy + the 3 weather channels |
-| ✅ | `5_event_geo_att` | speed + occupancy + the 3 event channels. **Same channel count and same parameter count as `3_weather`** — that pairing is the controlled comparison |
-| ✅ | `6_all` | all 11 |
-| ✅ | `0_speed` / `6_all` + **weighted loss** | changes only the training objective |
-| ✅ | `0_speed` / `6_all` + **directed operator** | changes only the graph convolution |
-| ❌ | `2_calendar` | speed + occupancy + calendar |
-| ❌ | `4_event_geo` | event geometry *without* attendance |
+| configuration | what it isolates |
+|---|---|
+| `0_speed` | the published baseline. Everything is measured against this |
+| `1_traffic` | + occupancy |
+| `2_calendar` | + time of day, day of week, is holiday — **all broadcast to every node** |
+| `3_weather` | + temperature, precipitation, wind — **also all broadcast** |
+| `4_event_geo` | + venue distance and event activity, **without attendance** |
+| `5_event_geo_att` | the same, **with attendance** |
+| `6_all` | all 11 |
+| `0_speed` / `6_all` + **weighted loss** | changes only the training objective |
+| `0_speed` / `6_all` + **directed operator** | changes only the graph convolution |
 
-**Why the two were dropped:** GPU budget. Each configuration costs 9 runs (3 folds ×
-3 seeds), and the queue in `scripts/run_experiments.sh` is ordered so that the headline
-pair finishes first and every later batch is optional. `2_calendar` and `4_event_geo`
-were the last two and did not run.
+Three of these are controlled pairs, which is what makes the table readable:
 
-That is a real gap, and it costs one specific comparison: `4_event_geo` versus
-`5_event_geo_att` would have isolated **whether crowd size carries information beyond
-the mere fact that a fixture is happening**. We have that answer from the raw data
-(activity alone reaches t = −1.02, not significant; attendance-weighted reaches
-t = −9.76) but not from a trained model.
+- `2_calendar` vs `3_weather` vs `5_event_geo_att` — **identical channel count
+  (C=5) and near-identical parameter count (118,732)**. They differ only in what
+  the three added channels contain.
+- `4_event_geo` vs `5_event_geo_att` — differ by exactly one thing, whether
+  attendance enters.
+- `6_all` vs its weighted-loss and directed-operator variants — same channels,
+  one component changed.
 
 ### The two changes that are not channels
 
 - **congestion-weighted loss** — during training, errors at low speed count more:
   weight `1 + max(0, (60 − speed)/20)`, so 1.0 at free flow, 1.5 at 50 mph, 2.5 at 30.
   Nothing else changes, and every reported number is still ordinary *unweighted* MAE.
-- **directed operator** — the published model is forced to treat "the sensor ahead of
-  me" and "the sensor behind me" as the same kind of neighbour, because Chebyshev graph
+- **directed operator** — the published model must treat "the sensor ahead of me"
+  and "the sensor behind me" as the same kind of neighbour, because Chebyshev graph
   convolution needs a symmetric matrix. We swapped in the DCRNN/Graph WaveNet dual
-  random walk, which keeps the two directions apart. 5 supports instead of 3,
+  random walk, which keeps the directions apart. 5 supports instead of 3,
   +16,384 parameters, no other change.
 
 ## 5. The five things we measure
@@ -116,59 +115,119 @@ t = −9.76) but not from a trained model.
 |---|---|
 | `MAE_60min` | how wrong on average — **the number everyone reports** |
 | `MAE_rain_x_commute_60min` | how wrong when it is raining during rush hour — **where the errors actually are** |
-| `propagation_fidelity` | did it learn that jams travel backwards (reality = 1.683) |
+| `propagation_fidelity` | did it learn that jams travel backwards (reality = 1.683); measured on the 60-min forecasts |
 | `onset_recall` | of the traffic breakdowns that really happened, what share did it flag |
 | `false_alarms` | how often it cried wolf |
 
 ## 6. The result
 
-**No two of those five metrics pick the same winner.**
+### The headline: the two signals in the title do not work the way we assumed
 
-| metric | winner |
+| rung | MAE@60 | rain × commute | event egress | propagation | onset recall |
+|---|---:|---:|---:|---:|---:|
+| `0_speed` | 2.502 | 5.349 | 1.307 | 1.375 | 0.702 |
+| `1_traffic` | 2.369 | 5.147 | 1.250 | 1.452 | 0.726 |
+| **`2_calendar`** | **2.279** | **4.861** | **1.237** | **1.489** | 0.750 |
+| `3_weather` | 2.485 | 5.559 | 1.302 | 1.454 | **0.688** |
+| `4_event_geo` | 2.318 | 5.070 | 1.255 | 1.348 | 0.763 |
+| `5_event_geo_att` | 2.303 | 4.991 | 1.239 | 1.324 | 0.752 |
+| `6_all` | 2.361 | 5.283 | 1.406 | 1.389 | 0.738 |
+| *observed truth* | — | — | — | **1.683** | — |
+
+**(a) Weather channels make the model worse, and the more weather-specific the
+window, the worse they get.** `3_weather` against `1_traffic`, the same model
+with three channels added:
+
+| measured in | change |
 |---|---|
-| lowest average error | `5_event_geo_att` |
-| lowest error when it rains in rush hour | `1_traffic` |
-| best at reproducing the physics | `3_weather` |
-| catches the most breakdowns | `6_all` + weighted loss |
-| fewest false alarms | `0_speed` + directed operator |
+| overall | **+0.116 mph (4.9% worse)** |
+| inside adverse weather | **+0.170 mph (6.6% worse)** |
+| inside rain × commute | **+0.412 mph (8.0% worse)** |
 
-The rank correlation between average error and propagation fidelity is **−0.23**, which
-for nine models is indistinguishable from no relationship at all.
+It also has the worst onset recall of any trained model, 0.688.
 
-**That is the paper.** Choosing a model by average error does not merely understate the
-differences that matter — it picks a *different model* from the one any operationally
-meaningful metric picks.
+We knew why before training. Controlling for time of day, rain does not change
+how *often* breakdowns happen (91.8% of commute-peak timesteps carry a shockwave
+in rain against 93.1% dry) or how *large* they are (6.25 sensors involved against
+6.46). Rain is a uniform capacity reduction of about −3.04 mph, and a uniform
+slowdown is the easiest thing to read out of a speed history. The model does not
+need to be told it is raining; it can see that everything is 3 mph slower.
 
-### Three things that make the point concrete
+**(b) Event channels help, but not because they are about events.** They do lower
+error — `5_event_geo_att` beats `1_traffic` by 0.066 mph overall. But:
 
-**(a) Weather channels made the model worse, not just "not better".**
-`3_weather` has the worst error of any trained model when it rains during rush hour
-(5.559 vs 5.349 for the speed-only baseline) and the worst onset recall (0.688).
-We know why, and we knew before training: controlling for time of day, rain does not
-change how *often* breakdowns happen (91.8% in rain vs 93.1% dry) or how *big* they are.
-Rain just slows everyone down uniformly by about 3 mph — and a uniform slowdown is
-already visible in the speed history the model has.
+| comparison | result |
+|---|---|
+| inside the egress hour: `2_calendar` (no event channels) vs `5_event_geo_att` (all of them) | **1.237 vs 1.239 — a difference of 0.002 mph** |
+| `4_event_geo` (no attendance) vs `5_event_geo_att` (with attendance) | 2.318 vs 2.303 — 0.015 mph, against a seed-and-fold spread of ±0.15–0.25 |
+| where `5_event_geo_att` actually wins | the **rain × commute** window, which contains no fixtures at all |
 
-**(b) What helps is not more information — it is information that varies by location.**
-`3_weather` and `5_event_geo_att` have **the same number of parameters (118,732) and the
-same number of channels (5)**. The only difference: weather is one number copied to all
-325 sensors, while event distance is different for every sensor. Their ordering reverses
-in every window and every time period, 5.559 vs 4.991.
+In the hour after a fixture ends, a model that has never heard of the fixture
+performs identically to one that knows its time, its venue and its attendance.
+Removing attendance changes nothing. And the gains appear in windows with no
+events in them.
 
-> On a graph model, a channel with no spatial variation is not a weak feature.
-> It is a harmful one — it fills three slots of capacity saying nothing about *which*
-> sensor this is.
+The only mechanism that fits: `dist_to_venue` is static and **per-node**, and
+STGCN has no node embeddings. It is the one channel that tells the model *which*
+sensor it is looking at. It is functioning as a positional encoding, not as event
+information.
 
-**(c) The obvious architectural fix did not work, and that is the cleanest evidence.**
-We gave the model the ability to distinguish upstream from downstream, precisely because
-shockwaves travel upstream 1.68× more often. Average error barely moved
-(2.361 → 2.338, well inside the ±0.25 spread across runs). Propagation fidelity got
-**worse** (1.389 → 1.315, worse in 7 of 9 paired runs; for the speed-only model,
-1.375 → 1.246, worse in **9 of 9**).
+**(c) What actually helps is the calendar — and it is broadcast too.** This is
+the result we did not expect. `2_calendar` wins on overall error, on both weather
+windows, on the egress window, and on propagation fidelity, using three channels
+that are each a single number copied to all 325 sensors — structurally identical
+to the weather channels, at the same parameter count.
 
-An average-error-only report would have logged that as a small improvement.
+So "a channel with no spatial variation is harmful" is **wrong**. The distinction
+that survives is redundancy:
 
----
+> A broadcast channel helps when it carries something the target's own history
+> cannot supply, and hurts when it does not. Rain is already visible in the speed
+> history as a uniform slowdown, so the weather channels are redundant and cost
+> capacity. Time-of-day and day-of-week place the model in the daily and weekly
+> cycle, which 60 minutes of speed cannot pin down — a quiet hour looks the same
+> at 03:00 on a Tuesday and 11:00 on a Sunday.
+
+### What the metrics agree and disagree about
+
+| | Spearman vs overall MAE | p |
+|---|---:|---:|
+| rain × commute MAE | +0.79 | 0.004 |
+| onset recall | −0.65 | 0.032 |
+| **propagation fidelity** | **−0.35** | **0.298** |
+
+Aggregate MAE does predict the other *error* metrics — unsurprising, they are all
+error. It does **not** predict whether the model reproduces the physics.
+`5_event_geo_att` ranks 2nd on error and 8th on propagation; `3_weather` ranks 8th
+on error and 2nd on propagation. And the cleanest case is the directed operator:
+it leaves aggregate MAE unchanged (2.502 → 2.503) while propagation falls from
+1.375 to 1.246, worse in 9 of 9 paired runs.
+
+**Stated narrowly, and it holds:** aggregate error ranks models the same way other
+error metrics do, and tells you nothing about whether the model learned that jams
+travel backwards.
+
+### The honest summary
+
+| what the title promises | what the results show |
+|---|---|
+| Weather-aware | ❌ weather channels are 8% **worse** inside rain × commute |
+| Event-aware | ⚠️ the channels help, but strip out the event content and nothing changes; the gain is `dist_to_venue` acting as node identity |
+| Shockwave | ✅ real and measured — observed 1.68×, models reproduce 1.25–1.49, and the directed operator makes it worse |
+
+This is a negative result with a mechanism attached, which is more useful than a
+positive one without. It also yields a rule that transfers: **the value of an
+exogenous channel is not what it describes, but whether it carries information the
+target's own history does not already contain.**
+
+### Still open
+
+The forecast-conditioned version was never tested where it matters. We measured
+that 22–24% of adverse-weather target windows have a completely dry input window —
+the rain starts inside the forecast horizon, so a contemporaneous channel cannot
+see it at all. The `modeling` branch built exactly that mechanism using an ECMWF
+IFS forecast archive, but its test block contains zero rain. Nobody has yet
+answered whether a *forecast* of weather helps.
 
 ## 7. How to read the table without being misled
 
@@ -236,7 +295,7 @@ Wu et al. (2019), *Graph WaveNet for Deep Spatial-Temporal Graph Modeling*, Tabl
 | conventional 70/10/20 (published) | FC-LSTM | 2.05 / 2.20 / 2.37 |
 | conventional 70/10/20 (published) | ARIMA | 1.62 / 2.33 / 3.38 |
 | conventional 70/10/20 (**this work**) | **STGCN, our reproduction** | **1.44 / 1.93 / 2.58** |
-| rolling folds 00-02 (this work) | everything else in the file | 1.37–1.57 / 1.79–2.16 / 2.30–3.04 |
+| rolling folds 00-02 (this work) | everything else in the file | 1.37–1.57 / 1.79–2.16 / 2.28–3.04 |
 
 ### The reproduction is the comparable row, and it lands
 
@@ -274,10 +333,11 @@ number and a useless one for asking whether weather information helps.
 
 It is a stronger forecaster than STGCN on aggregate error — 1.95 against 2.49 mph at
 60 minutes, a 22% improvement, and we do not dispute it. But every number in that
-column is aggregate error, and section 6 is the finding that aggregate error ranks
-models differently from every operational metric we measured. Swapping in a stronger
-backbone would change the aggregate column and leave that finding untouched. We kept
-STGCN unchanged on purpose: the contribution is the evaluation protocol, not the model.
+column is aggregate error, and section 6 shows that aggregate error says nothing
+about whether a model reproduces the upstream propagation the title is about.
+Swapping in a stronger backbone would change the aggregate column and leave the
+questions this project asks untouched. We kept STGCN unchanged on purpose: the
+contribution is the evaluation protocol, not the model.
 
 ---
 
