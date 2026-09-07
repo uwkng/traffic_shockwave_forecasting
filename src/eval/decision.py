@@ -159,11 +159,11 @@ def main() -> int:
                            for r in ratios}
             results.setdefault(model, {})[scope] = agg
 
-    print(f"  {'model':22s}{'scope':8s}{'n':>3s}{'TP':>8s}{'FP':>8s}{'FN':>8s}"
+    print(f"  {'model':24s}{'scope':8s}{'n':>3s}{'TP':>8s}{'FP':>8s}{'FN':>8s}"
           f"{'prec':>7s}{'rec':>7s}{'+-':>6s}{'F1':>7s}")
     for model, scopes in results.items():
         for scope, e in scopes.items():
-            print(f"  {model:22s}{scope:8s}{e['n_seeds']:>3d}"
+            print(f"  {model:24s}{scope:8s}{e['n_seeds']:>3d}"
                   f"{e['tp']:>8,}{e['fp']:>8,}{e['fn']:>8,}"
                   f"{e['precision']:>7.3f}{e['recall']:>7.3f}{e['recall_sd']:>6.3f}"
                   f"{e['f1']:>7.3f}")
@@ -171,10 +171,10 @@ def main() -> int:
     print(f"\n  expected cost in false-alarm-equivalents (a miss costs `ratio` "
           f"of them);\n  lower is better, and the winner changing with the ratio "
           f"is the finding:")
-    print(f"  {'model':22s}{'scope':8s}" + "".join(f"{'x' + str(r):>12s}" for r in ratios))
+    print(f"  {'model':24s}{'scope':8s}" + "".join(f"{'x' + str(r):>12s}" for r in ratios))
     for model, sc in results.items():
         for scope, e in sc.items():
-            print(f"  {model:22s}{scope:8s}"
+            print(f"  {model:24s}{scope:8s}"
                   + "".join(f"{e['cost'][str(r)]:>12,.0f}" for r in ratios))
 
     OUT.mkdir(exist_ok=True)

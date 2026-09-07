@@ -216,19 +216,21 @@ that survives is redundancy:
 | | Spearman vs overall MAE | p |
 |---|---:|---:|
 | rain × commute MAE | +0.79 | 0.004 |
-| onset recall | −0.65 | 0.032 |
+| onset recall | −0.57 | 0.066 |
 | **propagation fidelity** | **−0.35** | **0.298** |
 
-Aggregate MAE does predict the other *error* metrics — unsurprising, they are all
-error. It does **not** predict whether the model reproduces the physics.
+The three form a gradient, not a split. Aggregate MAE tracks the other *point-error*
+metric closely — unsurprising, they are both error. It tracks a *detection* metric
+only weakly, and at n = 11 that correlation is not significant. It does **not**
+predict whether the model reproduces the physics.
 `5_event_geo_att` ranks 2nd on error and 8th on propagation; `3_weather` ranks 8th
 on error and 2nd on propagation. And the cleanest case is the directed operator:
 it leaves aggregate MAE unchanged (2.502 → 2.503) while propagation falls from
 1.375 to 1.246, worse in 9 of 9 paired runs.
 
-**Stated narrowly, and it holds:** aggregate error ranks models the same way other
-error metrics do, and tells you nothing about whether the model learned that jams
-travel backwards.
+**Stated narrowly, and it holds:** aggregate error ranks models the same way another
+point-error metric does, only loosely the way a detection metric does, and tells you
+nothing about whether the model learned that jams travel backwards.
 
 ### The honest summary
 
@@ -334,9 +336,26 @@ Where it reads `1`, that row is a single seed: `src/eval/decision.py` stripped t
 with an end-anchored regex and then wrote into a dict, so for the seven plain rungs each
 seed silently overwrote the last and only seed 44 survived. The variant rows
 (`__weighted`, `__diffusion`, `__future`) were never collapsed and are true 3-seed means.
-The bug is fixed as of 2026-09-07, and `0_speed` has been re-measured from all three
-seeds locally (0.702 → **0.693**, false alarms 1432 → **1360**). The remaining six need
-`decision.py` re-run on the box that holds the predictions — no retraining involved.
+The bug is fixed as of 2026-09-07 and **all rows have been re-measured from all three
+seeds**, locally, by re-running `decision.py` over predictions recovered from the
+`v2`, `new_rungs` and `future_preds` bundles. No retraining was involved and no GPU was
+needed. What moved:
+
+| row | recall | false alarms |
+|---|---|---|
+| `0_speed` | 0.702 → **0.693** | 1432 → **1360** |
+| `1_traffic` | 0.726 → 0.731 | 1770 → 1798 |
+| `2_calendar` | 0.750 → 0.751 | 1868 → 1819 |
+| `3_weather` | 0.688 → **0.696** | 1381 → **1538** |
+| `4_event_geo` | 0.763 → **0.756** | 2144 → **1936** |
+| `5_event_geo_att` | 0.752 → **0.743** | 1823 → **1681** |
+| `6_all` | 0.738 → 0.739 | 1775 → 1784 |
+
+Two conclusions changed. `3_weather` was the worst-recall trained model at 0.688; it is
+now second-worst, behind `0_speed`. And the rank correlation between aggregate MAE and
+onset recall fell from −0.65 (p = 0.032) to **−0.57 (p = 0.066)** — from significant to
+not. The variant rows (`__weighted`, `__diffusion`, `__future`) were never collapsed and
+did not move.
 
 This matters more than it sounds: measured across the `__future` runs, recall varies by
 up to **0.067 between seeds of the same model on the same fold**, while the entire spread
