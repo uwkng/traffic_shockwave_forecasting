@@ -1,7 +1,10 @@
 # Results — what we did and what the numbers mean
 
-Everything here comes from one experiment run on 2026-09-05.
-**99 trained models = 11 configurations × 3 time periods × 3 random seeds.**
+**144 trained models = 16 configurations × 3 time periods × 3 random seeds.**
+
+Two runs: 99 contemporaneous models on 2026-09-05, then 45 known-future models on
+2026-09-06 (section 6). The detection columns were re-measured on 2026-09-07 after a
+seed-grouping bug was found — see section 7 for what moved.
 
 | file | what it is |
 |---|---|
@@ -148,13 +151,13 @@ Three of these are controlled pairs, which is what makes the table readable:
 
 | rung | MAE@60 | rain × commute | event egress | propagation | onset recall |
 |---|---:|---:|---:|---:|---:|
-| `0_speed` | 2.502 | 5.349 | 1.307 | 1.375 | 0.702 |
-| `1_traffic` | 2.369 | 5.147 | 1.250 | 1.452 | 0.726 |
-| **`2_calendar`** | **2.279** | **4.861** | **1.237** | **1.489** | 0.750 |
-| `3_weather` | 2.485 | 5.559 | 1.302 | 1.454 | **0.688** |
-| `4_event_geo` | 2.318 | 5.070 | 1.255 | 1.348 | 0.763 |
-| `5_event_geo_att` | 2.303 | 4.991 | 1.239 | 1.324 | 0.752 |
-| `6_all` | 2.361 | 5.283 | 1.406 | 1.389 | 0.738 |
+| `0_speed` | 2.502 | 5.349 | 1.307 | 1.375 | **0.693** |
+| `1_traffic` | 2.369 | 5.147 | 1.250 | 1.452 | 0.731 |
+| **`2_calendar`** | **2.279** | **4.861** | **1.237** | **1.489** | 0.751 |
+| `3_weather` | 2.485 | 5.559 | 1.302 | 1.454 | 0.696 |
+| `4_event_geo` | 2.318 | 5.070 | 1.255 | 1.348 | 0.756 |
+| `5_event_geo_att` | 2.303 | 4.991 | 1.239 | 1.324 | 0.743 |
+| `6_all` | 2.361 | 5.283 | 1.406 | 1.389 | 0.739 |
 | *observed truth* | — | — | — | **1.683** | — |
 
 **(a) Weather channels make the model worse, and the more weather-specific the
@@ -164,10 +167,11 @@ with three channels added:
 | measured in | change |
 |---|---|
 | overall | **+0.116 mph (4.9% worse)** |
-| inside adverse weather | **+0.170 mph (6.6% worse)** |
+| inside adverse weather | **+0.171 mph (6.6% worse)** |
 | inside rain × commute | **+0.412 mph (8.0% worse)** |
 
-It also has the worst onset recall of any trained model, 0.688.
+Its onset recall drops with it, 0.731 → **0.696**, second-lowest of the eleven and
+beaten only by `0_speed` itself at 0.693.
 
 We knew why before training. Controlling for time of day, rain does not change
 how *often* breakdowns happen (91.8% of commute-peak timesteps carry a shockwave
