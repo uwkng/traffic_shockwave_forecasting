@@ -108,7 +108,7 @@ def main() -> int:
         return 1
 
     ratios = [1, 2, 5, 10, 20, 50]
-    rows, results = [], {}
+    per_seed, results = {}, {}
     print(f"=== stage 12: decision layer, split {args.split} ===")
     print(f"  deploy a special-event timing plan on the {near.sum()} sensors "
           f"within {args.max_km} km of a venue")
@@ -116,7 +116,14 @@ def main() -> int:
           f"inside the {contract.HORIZON * contract.FREQ_MIN}-min horizon\n")
 
     for f in files:
-        model = re.sub(r"__seed\d+$", "", f.stem.replace(f"__{args.split}", ""))
+        # `__seed\d+` is NOT at the end of a variant run: `6_all__fold00__seed42__future`
+        # keeps going. Anchoring to $ made every variant its own single-seed
+        # "model", while the plain rungs collapsed onto one key whose entry was
+        # then OVERWRITTEN by each seed in turn - so what looked like a 3-seed
+        # aggregate was in fact seed 44 alone. Seed spread on recall reaches
+        # 0.067 within a single fold, against a between-model spread of ~0.09,
+        # so that silently made the recall column unusable for ranking.
+        model = re.sub(r"__seed\d+(?=__|$)", "", f.stem.replace(f"__{args.split}", ""))
         z = np.load(f)
         pred, true, ts = z["pred"][:, :, near], z["true"][:, :, near], z["timesteps"]
         idx = ts[:, None] + np.arange(contract.HORIZON)[None, :]
@@ -133,14 +140,33 @@ def main() -> int:
                          f1=2 * prec * rec / max(prec + rec, 1e-9),
                          cost={str(r): cost(c, r) for r in ratios},
                          n_samples=int(len(p)))
-            results.setdefault(model, {})[scope] = entry
-            rows.append((model, scope, c, prec, rec, entry["f1"]))
+            per_seed.setdefault(model, {}).setdefault(scope, []).append(entry)
 
-    print(f"  {'model':22s}{'scope':8s}{'TP':>8s}{'FP':>8s}{'FN':>8s}"
-          f"{'prec':>7s}{'rec':>7s}{'F1':>7s}")
-    for model, scope, c, prec, rec, f1 in rows:
-        print(f"  {model:22s}{scope:8s}{c['tp']:>8,}{c['fp']:>8,}{c['fn']:>8,}"
-              f"{prec:>7.3f}{rec:>7.3f}{f1:>7.3f}")
+    # Counts are SUMMED over seeds, rates are AVERAGED over seeds with an sd.
+    # The two disagree slightly (a ratio of sums is not the mean of ratios); the
+    # per-seed mean is the one to quote, because it is the only one that carries
+    # an error bar, and without the error bar these numbers cannot be ranked.
+    for model, scopes in per_seed.items():
+        for scope, es in scopes.items():
+            agg = {k: int(sum(e[k] for e in es)) for k in ("tp", "fp", "fn", "tn")}
+            agg["n_seeds"] = len(es)
+            agg["n_samples"] = int(np.mean([e["n_samples"] for e in es]))
+            for k in ("precision", "recall", "f1"):
+                v = [e[k] for e in es]
+                agg[k] = float(np.mean(v))
+                agg[k + "_sd"] = float(np.std(v, ddof=1)) if len(v) > 1 else 0.0
+            agg["cost"] = {str(r): float(np.mean([e["cost"][str(r)] for e in es]))
+                           for r in ratios}
+            results.setdefault(model, {})[scope] = agg
+
+    print(f"  {'model':22s}{'scope':8s}{'n':>3s}{'TP':>8s}{'FP':>8s}{'FN':>8s}"
+          f"{'prec':>7s}{'rec':>7s}{'+-':>6s}{'F1':>7s}")
+    for model, scopes in results.items():
+        for scope, e in scopes.items():
+            print(f"  {model:22s}{scope:8s}{e['n_seeds']:>3d}"
+                  f"{e['tp']:>8,}{e['fp']:>8,}{e['fn']:>8,}"
+                  f"{e['precision']:>7.3f}{e['recall']:>7.3f}{e['recall_sd']:>6.3f}"
+                  f"{e['f1']:>7.3f}")
 
     print(f"\n  expected cost in false-alarm-equivalents (a miss costs `ratio` "
           f"of them);\n  lower is better, and the winner changing with the ratio "

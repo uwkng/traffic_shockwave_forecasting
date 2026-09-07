@@ -67,6 +67,13 @@ directly comparable. The definition lives in `src/contract.py`.
 copied to all 325 sensors. Channels 8–10 are different for every sensor. Section 5(b)
 shows that this distinction, not the number of channels, decides the result.
 
+**Nine of the eleven are knowable in advance.** Speed and occupancy are not — those are
+what we are predicting. Of the other nine, `dist_to_venue` is constant in time, so its
+future value is bit-identical to its present one and duplicating it would add a column of
+repeated numbers. That leaves the **eight** in `contract.KNOWN_FUTURE_CHANNELS` that can
+meaningfully be supplied for the *next* hour as well as the past one. Section 6 shows
+that exactly one of the eight pays when you do.
+
 Why ≥15,000 on channel 10: below that threshold the measured speed drop in the egress
 hour is **+0.35 ± 0.41 mph** — the wrong sign. Above it, the effect is real
 (t = −9.76). The threshold was measured on the data before any model was trained.
@@ -87,6 +94,7 @@ plus two variants of the headline pair:
 | `6_all` | all 11 |
 | `0_speed` / `6_all` + **weighted loss** | changes only the training objective |
 | `0_speed` / `6_all` + **directed operator** | changes only the graph convolution |
+| any rung + **`__future`** | the model additionally sees the next 60 min of its own exogenous channels |
 
 Three of these are controlled pairs, which is what makes the table readable:
 
@@ -108,6 +116,21 @@ Three of these are controlled pairs, which is what makes the table readable:
   convolution needs a symmetric matrix. We swapped in the DCRNN/Graph WaveNet dual
   random walk, which keeps the directions apart. 5 supports instead of 3,
   +16,384 parameters, no other change.
+- **known-future covariates** (`__future`) — every ablation above forecasts using
+  only the *past* hour. But an operator planning at 17:00 already knows it will be
+  a Tuesday at 18:00, already has a weather forecast, and already knows the game
+  starts at 19:30. Those channels are *knowable in advance* in a way speed is not,
+  so a fair system should be allowed to use them. The `__future` runs append the
+  next 60 minutes of each exogenous channel to the input. Speed and occupancy are
+  never included — that would be reading the answer.
+
+  For weather this needed a **different data source**. Using the observed weather
+  as its own forecast is leakage, so `src/data/acquire.py` downloads the **ECMWF
+  IFS short-range forecast archive** — what was actually predicted at the time,
+  not what happened. Against the observed record it gets 94.9% of hours right but
+  recalls only **61.4%** of the wet ones. `loader.py` refuses to run rather than
+  fall back to observed weather if that file is missing.
+
 
 ## 5. The five things we measure
 
@@ -211,8 +234,8 @@ travel backwards.
 
 | what the title promises | what the results show |
 |---|---|
-| Weather-aware | ❌ weather channels are 8% **worse** inside rain × commute |
-| Event-aware | ⚠️ the channels help, but strip out the event content and nothing changes; the gain is `dist_to_venue` acting as node identity |
+| Weather-aware | ❌ weather channels are 8% **worse** inside rain × commute — and no better when handed the real ECMWF forecast of the next hour |
+| Event-aware | ⚠️ the channels help, but strip out the event content and nothing changes; the gain is `dist_to_venue` acting as node identity. The one place event content does pay is the **known-future** schedule |
 | Shockwave | ✅ real and measured — observed 1.68×, models reproduce 1.25–1.49, and the directed operator makes it worse |
 
 This is a negative result with a mechanism attached, which is more useful than a
@@ -220,14 +243,71 @@ positive one without. It also yields a rule that transfers: **the value of an
 exogenous channel is not what it describes, but whether it carries information the
 target's own history does not already contain.**
 
-### Still open
+### Letting the model see the future: it does not help, and the exception says why
 
-The forecast-conditioned version was never tested where it matters. We measured
-that 22–24% of adverse-weather target windows have a completely dry input window —
-the rain starts inside the forecast horizon, so a contemporaneous channel cannot
-see it at all. The `modeling` branch built exactly that mechanism using an ECMWF
-IFS forecast archive, but its test block contains zero rain. Nobody has yet
-answered whether a *forecast* of weather helps.
+The obvious objection to everything above is that we crippled the model. 22–24% of
+adverse-weather target windows have a completely **dry input window** — the rain
+starts inside the forecast horizon, so a channel that only sees the past hour
+cannot possibly know about it. Give the model the next 60 minutes of its exogenous
+channels and the weather result should change.
+
+We ran it: 5 rungs × 3 folds × 3 seeds = 45 more models (`__future` rows in the
+CSV). **It does not change.** Pooling the 15 rung × fold pairs, the lookahead
+models are *worse* at every horizon:
+
+| horizon | mean Δ MAE (ON − OFF) | paired t(14) | p | ON better in |
+|---|---:|---:|---:|---:|
+| 15 min | +0.005 | +2.42 | 0.030 | 5 / 15 |
+| 30 min | +0.009 | +2.64 | 0.020 | 4 / 15 |
+| 45 min | +0.015 | +2.56 | 0.023 | 4 / 15 |
+| 60 min | +0.017 | +2.14 | 0.051 | 4 / 15 |
+
+But the per-rung breakdown is not noise — it sorts cleanly by **what kind of
+channel is in the future block**:
+
+| rung | what its future block contains | Δ MAE @60 | folds ON wins |
+|---|---|---:|---:|
+| `4_event_geo` | event schedule only (1 channel) | **−0.021** | **3 / 3** |
+| `5_event_geo_att` | event schedule **+ attendance** | +0.006 | 1 / 3 |
+| `2_calendar` | calendar only | +0.011 | 0 / 3 |
+| `3_weather` | ECMWF forecast only | +0.040 | 0 / 3 |
+| `6_all` | all eight, forecast included | +0.051 | 0 / 3 |
+
+`4_event_geo__future` is the only configuration where lookahead helps, and it helps
+in **all 12 fold × horizon cells**, by more at every longer horizon
+(−0.002 / −0.006 / −0.013 / −0.021 at 15/30/45/60 min). That is what genuine
+lookahead value looks like: the further ahead you forecast, the more a known
+future is worth.
+
+**The rule the five rungs jointly imply.** A known-future channel pays only if it
+is *both*:
+
+1. **not derivable from the present** — the calendar fails this. Tuesday 18:00 is a
+   closed-form function of Tuesday 17:00, so `time_of_day@future` is a pure
+   restatement of a channel the model already has. It buys nothing and costs 1,344
+   parameters, and 0 of 3 folds improve.
+2. **known exactly** — the weather forecast fails this. It is a real forecast, so
+   it recalls only **61.4%** of wet hours. Feeding it in as though it were fact adds
+   more error than information, and the damage grows with horizon
+   (+0.012 → +0.040 from 15 to 60 min). Every rung containing it gets worse.
+
+Of the 11 channels, the **event schedule alone satisfies both**: a fixture's start
+time is not recoverable from an hour of speed, and it is known months ahead with
+certainty. Attendance fails a weaker version of (1) — `5_event_geo_att__future`
+adds `event_load@future` to the same future block and **cancels the gain**
+(−0.021 → +0.006), consistent with the earlier finding that attendance adds
+nothing.
+
+So the weather answer survives the objection, and gets stronger: weather does not
+help when the model sees only the past, and it does not help when the model is
+handed the actual operational forecast either.
+
+**What did not move.** Propagation fidelity is unchanged by lookahead — every rung
+shifts by less than one standard deviation (`2_calendar` 1.489 → 1.458,
+`6_all` 1.389 → 1.398), which is the decoupling above showing up again. Onset
+recall does not improve either (0.69–0.75, same band). And the ranking is
+unchanged: `2_calendar` is still the best model at 60 min (2.279);
+`4_event_geo__future` rises from 6th to 3rd (2.318 → 2.297) without taking the top.
 
 ## 7. How to read the table without being misled
 
@@ -248,6 +328,19 @@ different regimes.
 covers 22 fixtures. Neighbouring 5-minute readings are nearly identical, so a standard
 deviation computed over rows would be far too small. Where we quote a spread, it is
 across the 9 runs, not across rows.
+
+**Do not rank models on `onset_recall`.** Check `onset_recall_seeds` in the CSV first.
+Where it reads `1`, that row is a single seed: `src/eval/decision.py` stripped the seed
+with an end-anchored regex and then wrote into a dict, so for the seven plain rungs each
+seed silently overwrote the last and only seed 44 survived. The variant rows
+(`__weighted`, `__diffusion`, `__future`) were never collapsed and are true 3-seed means.
+The bug is fixed as of 2026-09-07, and `0_speed` has been re-measured from all three
+seeds locally (0.702 → **0.693**, false alarms 1432 → **1360**). The remaining six need
+`decision.py` re-run on the box that holds the predictions — no retraining involved.
+
+This matters more than it sounds: measured across the `__future` runs, recall varies by
+up to **0.067 between seeds of the same model on the same fold**, while the entire spread
+*between* models in that column is about 0.09. Single-seed recall cannot separate models.
 
 ---
 

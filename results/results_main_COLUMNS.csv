@@ -27,5 +27,6 @@ MAE_egress_30min,"same, 30 min ahead",mph
 MAE_egress_60min,"same, 60 min ahead",mph
 propagation_fidelity,does the model reproduce a shockwave travelling BACKWARDS along the road? Observed reality = 1.683. 1.0 would mean no sense of direction at all. HIGHER IS BETTER. Measured on the 60-min forecasts,ratio
 propagation_sd,spread of that ratio across the 9 runs (3 folds x 3 seeds),ratio
-onset_recall,"of the congestion onsets that really happened, what fraction did the model flag? HIGHER IS BETTER",fraction
+onset_recall,"of the congestion onsets that really happened, what fraction did the model flag? HIGHER IS BETTER. Read onset_recall_seeds first: where it says 1 this is ONE seed, not three, and seed-to-seed range within a single fold reaches 0.067 - larger than most gaps between models in this column, so DO NOT rank models on it",fraction
 false_alarms,"flags with no matching onset. LOWER IS BETTER, but read it with recall - one can always be bought with the other",count
+onset_recall_seeds,"how many seeds onset_recall and false_alarms average over. 3 = complete. 1 on persistence and historical_average is complete too, they are deterministic and have no seeds. 1 on a TRAINED rung is a defect: src/eval/decision.py grouped seeds with an end-anchored regex and then assigned into a dict, so only the last seed survived. Fixed 2026-09-07; the six rungs still marked 1 need decision.py re-run on the GPU box, which needs no retraining",count

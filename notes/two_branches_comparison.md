@@ -128,3 +128,67 @@ data helps.
 4. Ask about `2_calendar` before writing it up.
 5. Re-run `modeling`'s configurations with 3 seeds if GPU time allows. This is
    the cheapest thing on the list that changes what can be claimed.
+
+---
+
+## Settled 2026-09-07: the future covariates were run on the rolling folds
+
+`mei_modeling_on` ran all five applicable rungs with known-future covariates,
+3 folds x 3 seeds = 45 models, on the same folds, seeds and scaler as the
+contemporaneous ablation. That makes each `__future` run a controlled test
+against its own base rung, which is what neither branch had before.
+
+**Result: pooled over the 15 rung x fold pairs, lookahead is harmful at every
+horizon** (+0.005 / +0.009 / +0.015 / +0.017 mph at 15/30/45/60, paired
+t(14) = +2.42 / +2.64 / +2.56 / +2.14, p = 0.030 / 0.020 / 0.023 / 0.051).
+
+### This answers "one question to settle" above, and the answer is no
+
+The question was whether `modeling`'s -10.5% at 60 min on `2_calendar` came from
+the *future* calendar values acting as a positional encoding. It did not come
+from the future values at all:
+
+| | 60-min MAE |
+|---|---:|
+| `2_calendar`, contemporaneous | **2.279** |
+| `2_calendar__future` | 2.290 |
+
+0 of 3 folds improve. Tuesday 18:00 is a closed-form function of Tuesday 17:00,
+so `time_of_day@future` restates a channel the model already holds; it buys
+nothing and costs 1,344 parameters. The gain `modeling` measured is real, but it
+belongs to **having the calendar channels at all** - which the rolling-fold
+ablation also finds, `2_calendar` being the best of all seven rungs - not to
+seeing them ahead of time. Item 4 of "concrete next steps" is closed.
+
+### And it closes item 1 as well
+
+The Limitations paragraph no longer needs correcting toward "the open question is
+that `modeling`'s test block has no rain". The question is answered on folds that
+*do* have rain: 51 spells across the three test blocks. Future weather makes
+every rung that carries it worse (`3_weather` +0.040, `6_all` +0.051 at 60 min,
+0/3 folds each), and the mechanism is measured - the ECMWF IFS archive recalls
+only **61.4%** of wet hours, so it is fed in as fact while being wrong about 4 in
+10 of exactly the timesteps that matter.
+
+### What did help, and the rule it gives
+
+`4_event_geo__future` is the only configuration that improves, in **all 12
+fold x horizon cells**, monotonically with lead time (-0.002 / -0.006 / -0.013 /
+-0.021). Its future block is one channel: the event schedule.
+
+> A known-future channel pays only if it is **not derivable from the present**
+> *and* **known exactly**. Calendar fails the first. A real weather forecast
+> fails the second. Of the eight knowable channels only the event schedule
+> satisfies both.
+
+Adding attendance to that same future block cancels the whole gain
+(-0.021 -> +0.006), which is now the third independent measurement in this
+project saying crowd size carries nothing beyond fixture presence.
+
+### Bearing on "should we adopt the teammate's results"
+
+Unchanged, and now better supported. Keep both branches: they answer different
+questions, and the `__future` runs show the difference between them is not what
+either of us assumed. The `modeling` numbers are lower because of 2.6x more
+training data, not because lookahead helps - lookahead, measured properly, hurts.
+
