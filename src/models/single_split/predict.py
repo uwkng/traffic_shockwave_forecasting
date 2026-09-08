@@ -1,6 +1,6 @@
 """Run inference and save de-normalized predictions.
 
-    python -m src.models.predict --rung 0_speed --split single --seed 42
+    python -m src.models.single_split.predict --rung 0_speed --split single --seed 42
 
 Loads the checkpoint written by train.py, runs the test set, and saves
 predictions as [n_test, HORIZON, N_NODES] float32 in mph.
@@ -16,7 +16,7 @@ import torch
 
 from src import contract
 from src.models.loader import build_loaders, load_config
-from src.models.stgcn import STGCN, scaled_laplacian, cheb_polynomials
+from src.models.single_split.stgcn import STGCN, scaled_laplacian, cheb_polynomials
 
 
 def predict(rung: str, split: str, seed: int, config: str,

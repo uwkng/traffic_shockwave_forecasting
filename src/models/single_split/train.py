@@ -1,7 +1,7 @@
 """Train STGCN on any ablation rung and split.
 
-    python -m src.models.train --rung 0_speed --split single
-    python -m src.models.train --rung 6_all  --split fold00 --config configs/default.yaml
+    python -m src.models.single_split.train --rung 0_speed --split single
+    python -m src.models.single_split.train --rung 6_all  --split fold00 --config configs/default.yaml
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ import torch.nn as nn
 
 from src import contract
 from src.models.loader import build_loaders, load_config
-from src.models.stgcn import STGCN, scaled_laplacian, cheb_polynomials
+from src.models.single_split.stgcn import STGCN, scaled_laplacian, cheb_polynomials
 
 
 # ---------------------------------------------------------------------------

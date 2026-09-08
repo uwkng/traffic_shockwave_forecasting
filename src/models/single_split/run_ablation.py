@@ -1,12 +1,12 @@
 """Run the full ablation sweep: all rungs x all rolling folds.
 
-    python -m src.models.run_ablation
-    python -m src.models.run_ablation --splits single         # vanilla reproduction only
-    python -m src.models.run_ablation --rungs 0_speed 6_all   # subset of rungs
-    python -m src.models.run_ablation --future-covariates     # with forecast weather
+    python -m src.models.single_split.run_ablation
+    python -m src.models.single_split.run_ablation --splits single         # vanilla reproduction only
+    python -m src.models.single_split.run_ablation --rungs 0_speed 6_all   # subset of rungs
+    python -m src.models.single_split.run_ablation --future-covariates     # with forecast weather
 
 After this finishes, run predict + eval for each:
-    python -m src.models.run_ablation --predict-and-eval
+    python -m src.models.single_split.run_ablation --predict-and-eval
 """
 
 from __future__ import annotations
@@ -16,8 +16,8 @@ import time
 
 from src import contract
 from src.models.loader import available_splits, load_config
-from src.models.train import run as train_run
-from src.models.predict import predict as predict_run
+from src.models.single_split.train import run as train_run
+from src.models.single_split.predict import predict as predict_run
 
 
 def main() -> int:
@@ -51,7 +51,7 @@ def main() -> int:
     print(f"  future_covariates: {fc}\n")
 
     if args.predict_and_eval:
-        from src.eval.run import evaluate_split, _print_results
+        from src.eval.single_split.run import evaluate_split, _print_results
         for i, (rung, split) in enumerate((r, s) for r in rungs for s in splits):
             print(f"\n[{i+1}/{total}] predict + eval: {rung} / {split}")
             predict_run(rung, split, args.seed, args.config, args.device, fc)

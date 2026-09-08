@@ -1,7 +1,7 @@
 """Stage 11 — evaluate predictions, stratified by window, distance, horizon.
 
-    python -m src.eval.run --rung 0_speed --split fold00 --seed 42
-    python -m src.eval.run --rung 6_all  --split fold00 --seed 42 --compare 0_speed
+    python -m src.eval.single_split.run --rung 0_speed --split fold00 --seed 42
+    python -m src.eval.single_split.run --rung 6_all  --split fold00 --seed 42 --compare 0_speed
 
 Loads the .npy predictions written by predict.py, slices them by evaluation
 window (normal / adverse weather / event egress / holiday) and by distance
@@ -21,7 +21,7 @@ import pandas as pd
 
 from src import contract
 from src.models.loader import build_loaders, load_config
-from src.eval.metrics import all_metrics
+from src.eval.single_split.metrics import all_metrics
 from src.eval import windows
 
 
