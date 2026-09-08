@@ -174,7 +174,28 @@ EVENT_LOAD_DISTANCE = "haversine"   # "haversine" | "road" (distances_bay_2017.c
 INPUT_WINDOW = 12       # 12 steps = 60 min of history  -> X
 
 HORIZON = 12            # 12 steps = 60 min ahead       -> Y
-EVAL_HORIZON_STEPS = {"15min": 3, "30min": 6, "60min": 12}
+# Reported horizons. 45 min, not 60. The model still PREDICTS 12 steps
+# (HORIZON below); this only chooses which slices get a column in the tables.
+#
+# Measured, per-node AR(12) on the last 20%, MAE in mph by the regime of the
+# TRUE value - the aggregate column is what a 60-min row actually reports:
+#     horizon   <35 mph   35-45   >55 free-flow   ALL
+#     15 min      5.35     6.60       1.21        1.63
+#     30 min      9.97     9.01       1.58        2.25
+#     60 min     17.56    12.28       2.17        3.20
+# At 60 min a naive extrapolator is out by 17.6 mph exactly where this project
+# claims to be useful, so a 60-min column reports mostly noise in the windows
+# that matter while looking respectable in aggregate (90.2% of observations are
+# free-flow). 15-30 min is also the operating window for the interventions the
+# proposal names - variable speed limits, ramp metering, en-route advisories.
+# Restore "60min": 12 here if a reviewer asks for it; nothing else changes.
+# 60min is back: the paper reports 15/30/60 so its table can be read against
+# the published PEMS-BAY row (Wu et al. 2019). 45min stays because the error a
+# 60-min row reports is dominated by free flow - a per-node AR(12) is out by
+# 17.56 mph below 35 mph at 60 min against 5.35 at 15, while its aggregate
+# column moves only 1.63 -> 3.20. Adding a key costs nothing: predictions
+# already carry all 12 steps, so this only chooses which get a column.
+EVAL_HORIZON_STEPS = {"15min": 3, "30min": 6, "45min": 9, "60min": 12}
 
 # A LONGER HORIZON IS THE OBVIOUS NEXT EXPERIMENT, and it is nearly free -
 # horizon only sizes the final Linear(64, HORIZON); the ST-Conv blocks operate

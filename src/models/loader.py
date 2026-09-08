@@ -110,7 +110,8 @@ class WindowDataset:
     """
 
     def __init__(self, master, ids, cols, scaler, input_window, horizon,
-                 target_channel, future_cols=None):
+                 target_channel, future_cols=None,
+                 forecast=None, forecast_positions=None):
         self.master = master
         self.ids = np.asarray(ids, dtype=np.int64)
         self.cols = cols
@@ -133,6 +134,25 @@ class WindowDataset:
             self.future_offsets = np.linspace(
                 input_window, input_window + horizon - 1, input_window
             ).round().astype(np.int64)
+        # The future weather must be a FORECAST, not the observation. Leaving
+        # the observed value in the future block would hand the model the answer
+        # it is being asked to anticipate; that is leakage, and it is the single
+        # easiest way to make these channels look valuable. `forecast` is
+        # [T, 3] of ECMWF IFS short-range predictions and `forecast_positions`
+        # says which columns of the future block they replace. The INPUT window
+        # keeps the observed series, because at serving time the past really is
+        # observed - the seam between the two is what deployment looks like.
+        self.forecast = forecast
+        self.forecast_positions = forecast_positions
+        # NOTE on normalisation: the future block is z-scored with the scaler
+        # fitted on the OBSERVED series, because that is what scalers.json holds
+        # and it is fitted on the training span only - so this leaks nothing.
+        # It does mean the forecast channel is not exactly zero-mean/unit-
+        # variance: measured over fold00's training span the forecast z-scores
+        # come out at mean -0.09..+0.18 and sd 0.72..1.30, the precipitation
+        # channel over-dispersed and wind under-dispersed. Harmless and applied
+        # identically to train, val and test, but do not report the future block
+        # as standardised.
 
     def __len__(self):
         return len(self.ids)
@@ -144,6 +164,10 @@ class WindowDataset:
         if self.future_cols is not None:
             f = np.asarray(self.master[t + self.future_offsets][:, :, self.future_cols],
                            dtype=np.float32)
+            if self.forecast is not None:
+                fc = self.forecast[t + self.future_offsets]        # [L, 3]
+                for j, pos in enumerate(self.forecast_positions):
+                    f[:, :, pos] = fc[:, j, None]                  # broadcast over nodes
             f = (f - self.scaler.future_mean) / self.scaler.future_std
             x = np.concatenate([x, f], axis=-1)       # [L, N, C + C_future]
         y = np.asarray(self.master[t + self.L:t + self.L + self.H, :, self.target],
@@ -278,8 +302,35 @@ def build_loaders(rung: str = "6_all", split: str = "single", *,
             f"train samples span [{tr.min()}, {tr.max() + L + H}). The scaler and "
             "the splits come from different builds - rerun stages 6 and 7.")
 
+    # Substitute the FORECAST for the observation in the future block, for the
+    # weather channels only. Refuse rather than silently fall back: a run that
+    # quietly used observed weather as its "forecast" would report leakage as a
+    # result, and the filename would not say so.
+    forecast, fpos = None, None
+    wx = ["temperature", "precipitation", "wind_speed"]
+    fnames = [contract.CHANNELS[c][0] for c in fcols]
+    if any(n in wx for n in fnames):
+        fpath = P / "weather_forecast.npy"
+        if not fpath.exists():
+            raise FileNotFoundError(
+                f"{fpath} is missing, but rung {rung!r} has weather among its "
+                "known-future channels. Using the OBSERVED weather as the future "
+                "value would be leakage, so this refuses instead of falling "
+                "back. Fix:\n"
+                "    python -c 'from src.data.acquire import fetch_weather_forecast as f; f()'\n"
+                f"    python -m src.data.build_dataset --config {config} --force")
+        forecast = np.load(fpath)
+        if forecast.shape != (master.shape[0], 3):
+            raise ValueError(f"weather_forecast.npy is {forecast.shape}, expected "
+                             f"({master.shape[0]}, 3) - rebuild stages 2-3.")
+        fpos = [fnames.index(n) for n in wx if n in fnames]
+        assert len(fpos) == 3, (
+            "the weather channels must enter the future block together; "
+            f"got {[fnames[i] for i in fpos]}")
+
     datasets = {p: WindowDataset(master, ids, cols, scaler, L, H,
-                                 contract.TARGET_CHANNEL, fcols or None)
+                                 contract.TARGET_CHANNEL, fcols or None,
+                                 forecast=forecast, forecast_positions=fpos)
                 for p, ids in parts.items()}
 
     out = {

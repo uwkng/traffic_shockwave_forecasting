@@ -232,6 +232,69 @@ def fetch_weather_openmeteo() -> pathlib.Path:
 # ---------------------------------------------------------------------------
 # 3. Events (curated CSV, checked into the repo)
 # ---------------------------------------------------------------------------
+# 2c. Weather - ECMWF IFS short-range FORECAST (Open-Meteo Historical Forecast)
+# ---------------------------------------------------------------------------
+# This is not the same thing as 2b, and the difference is the whole point.
+#
+# ASOS (2a) and ERA5-Land (2b) both say what the weather WAS. Fed as history
+# they tell the model what already happened, which is exactly the information
+# the speed history already contains: measured on this dataset, rain does not
+# change how often breakdowns occur (91.8% of commute-peak timesteps in rain
+# against 93.1% dry) nor how large they are - it is a uniform -3.04 mph
+# capacity reduction, and a uniform slowdown is trivially readable from an hour
+# of speeds. That is why the observed weather channels measure as worthless.
+#
+# A forecast is different information. Of the samples whose TARGET window
+# contains adverse weather, the fraction whose INPUT window is completely dry -
+# the rain starts inside the horizon, so a contemporaneous channel is blind to
+# it - is 8.2% at 15 min, 22.4% at 60 min and 41.9% at 3 h.
+#
+# The Historical Forecast API stitches together the FIRST hours of each
+# successive model run, so each timestamp carries the prediction with the
+# shortest available lead time (~0-12 h for ECMWF IFS, which runs every 6 h).
+# Every value therefore uses only information available before its own
+# timestamp: this is a forecast archive, NOT a reanalysis, and feeding it into
+# the future portion of the input is not leakage.
+#
+# Single point, like 2b. The network spans 19.7 x 21.1 km and the IFS grid is
+# 9-11 km, so querying per sensor would return ~4 distinct values, not 325.
+
+def fetch_weather_forecast() -> pathlib.Path:
+    """Download the ECMWF IFS short-range forecast archive for the centroid."""
+    out_path = WEATHER_DIR / "weather_forecast_hourly.csv"
+    if out_path.exists():
+        print(f"  forecast already present -> {out_path}")
+        return out_path
+
+    WEATHER_DIR.mkdir(parents=True, exist_ok=True)
+    lat, lon = _sensor_centroid()
+    url = (
+        "https://historical-forecast-api.open-meteo.com/v1/forecast?"
+        f"latitude={lat:.4f}&longitude={lon:.4f}"
+        "&start_date=2017-01-01&end_date=2017-06-30"
+        "&hourly=temperature_2m,precipitation,wind_speed_10m"
+        "&models=ecmwf_ifs"
+        "&timezone=America/Los_Angeles"
+    )
+    with urllib.request.urlopen(url, timeout=120) as resp:
+        data = json.loads(resp.read())
+
+    h = data["hourly"]
+    df = pd.DataFrame({
+        "timestamp": pd.to_datetime(h["time"]),
+        "temperature": h["temperature_2m"],
+        "precipitation": h["precipitation"],
+        "wind_speed": h["wind_speed_10m"],
+    })
+    n_null = int(df[["temperature", "precipitation", "wind_speed"]].isna().sum().sum())
+    assert len(df) > 4000, f"forecast archive returned only {len(df)} rows"
+    df.to_csv(out_path, index=False)
+    print(f"  ECMWF IFS forecast -> {out_path}  ({len(df)} hourly rows, "
+          f"{n_null} nulls, {(df.precipitation > 0).sum()} wet hours)")
+    return out_path
+
+
+# ---------------------------------------------------------------------------
 
 EVENTS_COLUMNS = [
     "start_time",           # ISO datetime, local tz (America/Los_Angeles)
@@ -277,6 +340,8 @@ if __name__ == "__main__":
         fetch_asos(station)
     build_weather()
     print("  (run fetch_weather_openmeteo() for cross-validation)")
+    print("\n[2b/3] Weather (ECMWF IFS forecast archive) ...")
+    fetch_weather_forecast()
 
     print("\n[3/3] Events ...")
     try:

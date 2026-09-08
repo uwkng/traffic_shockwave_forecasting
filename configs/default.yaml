@@ -178,9 +178,36 @@ events:
 
 features:
   event_load:
-    tau_km: 4.0             # exp(-d/tau) spatial decay
+    # exp(-d/tau) spatial decay. Swept under BOTH distance fields against the
+    # decay-weighted egress-hour speed anomaly over the 37 high-confidence
+    # fixtures; road distance dominates great-circle at every tau:
+    #   tau   great-circle          road
+    #    2    -0.72 t=-2.76         -0.96 t=-3.10  (only 90 nodes weighted >.01)
+    #    4    -0.54 t=-2.30         -0.84 t=-3.10  (187 nodes)   <- default
+    #    8    -0.41 t=-1.86         -0.60 t=-2.60
+    #   20    -0.33 t=-1.54         -0.41 t=-1.95
+    # 4.0 sits at the top of the road plateau with a far wider footprint than
+    # tau=2, which concentrates the whole channel on 90 of 325 nodes. Switching
+    # the distance field did NOT move the optimum.
+    tau_km: 4.0
     attendance_ref: 20000   # normaliser, so a full arena is ~1.0
-    distance: haversine     # haversine | road
+    # haversine | road. `road` uses the DIRECTED sensor-to-sensor driving
+    # distances in distances_bay_2017.csv, seeded from every sensor within
+    # 1.5 km of the venue. 128 sensor pairs sit within 150 m of each other on
+    # opposite carriageways; great-circle puts them a median 22 m apart while
+    # their speeds correlate at 0.115. Measured on high-confidence fixtures,
+    # egress hour, sensors within 5 km: great-circle -0.41 +- 0.23 (t=-1.75,
+    # not significant) against road -0.89 +- 0.26 (t=-3.37). See
+    # align.road_distance_km.
+    distance: road
+    # Provenance floor for the event channels and the eval windows alike.
+    # events.csv marks 37 rows `high` (ESPN, announced attendance), 46 `medium`
+    # and 12 `low` - and 42 of the 46 medium rows carry a per-type DEFAULT
+    # attendance, so filtering them by min_attendance filters our own defaults.
+    # Dropping 30 of 67 qualifying fixtures raises the egress-hour shockwave
+    # odds ratio from 2.36x to 5.25x and z from 2.35 to 3.66. See
+    # align.qualifying_events.
+    min_confidence: high
     # How long an event is treated as affecting traffic. This shapes the INPUT
     # channels. Keep it separate from eval.event_phases, which slices the
     # REPORTED metrics: the input span is deliberately wide (arrivals through
@@ -231,7 +258,7 @@ split:
     n_folds: 6
 
 eval:
-  horizons_min: [15, 30, 60]
+  horizons_min: [15, 30, 45, 60]   # keep in step with contract.EVAL_HORIZON_STEPS
   # Thresholds and the measurements behind them live in src/eval/windows.py.
   event_phases:             # minutes; egress is relative to end_time
     ingress: [-90, 0]
@@ -241,7 +268,12 @@ eval:
     adverse_mm: 0.51        # p75 of wet steps; -2.22 mph. TWO tiers, not three.
     lag_steps: 6
   min_attendance: 15000
-  distance_bins_km: [0, 1, 2, 5, 10, 20]
+  # Bins for dist_to_venue, which since 2026-09-05 is DIRECTED ROAD distance,
+  # not great-circle - the field runs 0.51 .. 48.29 km with a median of 15.58,
+  # against 0.51 .. 11.48 and a median of 4.56 before. The old top bin (10-20)
+  # silently became the modal bin and 127 nodes fell outside every bin. Node
+  # counts per bin now: 10 / 18 / 26 / 45 / 99 / 127.
+  distance_bins_km: [0, 1, 2, 5, 10, 20, 50]
   onset:
     speed_mph: 45.0
     persist_steps: 3
@@ -251,7 +283,28 @@ eval:
 model:
   stgcn:
     Kt: 3                  # temporal conv kernel size
-    Ks: 3                  # Chebyshev polynomial order
+    Ks: 3                  # polynomial / diffusion order
+    # chebyshev | diffusion
+    #
+    # `chebyshev` is what Yu et al. published, and it forces a SYMMETRIC
+    # Laplacian - see scaled_laplacian, which applies max(A, A.T). That makes
+    # the operator direction-blind, which is a structural problem here rather
+    # than a detail: a shockwave is a low-speed band travelling UPSTREAM, and
+    # measured on the observed series it goes upstream 1.53x more often than
+    # downstream at 10 min and 1.71x at 15 min. A symmetric operator cannot
+    # represent that asymmetry at all.
+    #
+    # `diffusion` is the DCRNN / Graph WaveNet answer: powers of the forward and
+    # backward random walks on the RAW directed adjacency, kept separate so the
+    # two directions get different weights. Support count goes from Ks to
+    # 1 + 2(Ks-1) - 3 to 5 - taking the model from 117k to ~150k parameters.
+    # Nothing else changes: ChebConv computes sum_k support_k @ x @ W_k and is
+    # agnostic to what the supports are.
+    #
+    # Run BOTH and report the pair. `chebyshev` keeps rung 0 comparable to the
+    # published PEMS-BAY numbers; `diffusion` tests whether direction-awareness
+    # matters for the phenomenon in the title.
+    graph_conv: chebyshev
     blocks: [[1, 64, 64], [64, 64, 64]]   # [c_in, c_mid, c_out] per ST-Conv block
     dropout: 0.3
 
