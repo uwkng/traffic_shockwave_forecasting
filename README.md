@@ -1,138 +1,74 @@
-# Traffic Shockwave Forecasting
+# When Aggregate Error Misleads: Evaluating Event- and Weather-Aware Traffic Forecasting on Externally Defined Disruption Windows
 
-Event- and weather-aware spatio-temporal graph networks for traffic shockwave
-forecasting. Course project, *Deep Learning and Decision Making* (TUM).
+Course project for *Deep Learning and Decision Making*, Technical University of Munich.
 
-**The contribution is the evaluation protocol, not the model.** Off-the-shelf
-STGCN, conditioned on weather and scheduled-event signals, evaluated *inside
-exogenously-defined anomalous windows* — an event egress hour, an adverse-weather
-spell — rather than on average.
+## Motivation
 
-- **`STATUS.md`** — what is done, what is not, and the decision log with the
-  measurement behind each choice. Read it before changing anything.
-- **`src/contract.py`** — shapes, channel order, splits, prediction format.
-  The interface all three workstreams build against.
+Standard traffic forecasting benchmarks report a single aggregate error across all timesteps. This hides performance in the conditions that matter most: event egress hours, adverse weather spells, and congestion shockwaves. The contribution of this project is the evaluation protocol, not a new model. We take an off-the-shelf STGCN (Yu et al., IJCAI 2018), condition it on weather and scheduled-event signals, and evaluate it specifically inside exogenously-defined anomalous windows.
 
-## Quick start
+## Data
+
+| Source | Description |
+|---|---|
+| [PEMS-BAY](https://github.com/liyaguang/DCRNN) | 325 freeway sensors, San Francisco Bay Area, Jan to Jun 2017, 5-min intervals |
+| ASOS (SJC + NUQ) | Precipitation and temperature, IDW-merged to sensor locations |
+| ESPN / venue calendars | 95 scheduled events across 4 venues (NHL, MLB, MLS, concerts) |
+
+The data pipeline assembles an 11-channel tensor `[52116, 325, 11]` combining speed, occupancy, time-of-day, weather, holiday, and event features. Channel selection per ablation rung is defined in `src/contract.py`.
+
+## Method
+
+**Model.** STGCN with parameterised `c_in`, allowing the same architecture for every ablation rung (1 to 11 input channels).
+
+**Splits.** Rolling cross-validation with 28-day test blocks. Folds 0 to 2 cover the wet season and event-heavy months. A single 70/10/20 split is available for reproducing published baselines.
+
+**Training.** 3 seeds per configuration, masked MAE loss on de-normalised speed (mph).
+
+**Evaluation.** Metrics stratified by event phase (ingress, in-play, egress), weather condition, distance to venue, and shockwave regime.
+
+## Project Structure
+
+```
+configs/default.yaml        All paths, thresholds, and split parameters
+src/contract.py             Data contract: shapes, channel order, prediction format
+src/data/                   Stages 1 to 7: acquire, align, features, samples, split, normalise
+src/models/stgcn.py         STGCN architecture
+src/models/train.py         Training loop (rolling folds, multi-seed)
+src/models/baselines.py     Trivial baselines (historical mean, last-observed)
+src/models/loader.py        Builds DataLoaders from processed tensors
+src/eval/                   Window definitions, metrics, stratified reports, decision layer
+scripts/                    Experiment runners and result collection
+paper/                      Write-up (LaTeX source and compiled PDF)
+results/                    Per-fold reports, main results table, figures
+notebooks/                  Vanilla STGCN reproduction (stage 8)
+```
+
+## Reproducing Results
 
 ```bash
-git clone <repo-url> && cd traffic_shockwave_forecasting
-pip install numpy pandas pyyaml requests        # pipeline
-pip install torch scipy                         # training only
+# Install dependencies
+pip install numpy pandas pyyaml requests scipy torch
 
-# first run also clones PEMS-BAY (233 MB) and downloads the weather
+# Build the dataset (first run downloads PEMS-BAY, ~233 MB)
 python -m src.data.build_dataset --config configs/default.yaml --acquire
 
-# rebuilds take ~15 s afterwards
-python -m src.data.build_dataset --config configs/default.yaml
+# Train all configurations (requires GPU)
+bash scripts/run_experiments.sh
 
-# sanity check: prints every rung, every split, and one real sample
-python -m src.models.loader --split single
+# Generate evaluation reports
+bash scripts/collect_results.sh
 ```
 
-If the download fails with `SSL: CERTIFICATE_VERIFY_FAILED`, your Python has no
-CA bundle — the usual python.org-installer situation on macOS. Fix the machine,
-not `acquire.py`: `open "/Applications/Python 3.x/Install Certificates.command"`.
+Results are written to `results/results_main.csv`. Column definitions are in `results/results_main_COLUMNS.csv`, and `results/README.md` explains the experimental setup and how to read the numbers.
 
-## What you get
+## Key Design Decisions
 
-`data/processed/`, ~1 GB, gitignored — rebuild it, do not ship it.
+1. **Chronological splits only.** No shuffling, to prevent future leakage.
+2. **Scaler fitted on training data only**, per channel and per fold.
+3. **All metrics computed after de-normalisation** in real mph.
+4. **Road distance** (not great-circle) for venue proximity. This resolves opposite-carriageway ambiguity and raises the event effect from non-significant to t = −3.37.
+5. **Rolling folds restricted to 0 through 2.** Folds 3 to 5 contain zero rain and zero events, so they cannot inform the research questions.
 
-| File | Shape | What |
-|---|---|---|
-| `master.npy` | `[52116, 325, 11]` | the whole period, every channel. 745 MB; open with `mmap_mode="r"` |
-| `splits.npz` | 21 arrays | sample indices: `single__train`, `fold00__test`, … |
-| `scalers.json` | — | per-channel mean/std, one set per split |
-| `eval_mask.npy` | `[52116, 325]` | True where speed was observed, not imputed |
-| `adj_mx.npy` | `[325, 325]` | Gaussian-kernel adjacency, threshold 0.1 |
-| `*_meta.json` | — | per-stage provenance, human-readable |
+## Authors
 
-`master.npy` is not split. It is the full six months; `splits.npz` indexes into
-it. Same tensor, different bookmarks.
-
-## Using it
-
-```python
-from src.models.loader import build_loaders
-
-loaders, adj, scaler = build_loaders(rung="6_all", split="fold00")
-model = STGCN(c_in=loaders["c_in"], ...)
-
-for X, Y in loaders["train"]:        # X normalised, Y raw mph
-    ...
-pred_mph = scaler.to_mph(pred)       # before any metric
-```
-
-`rung` selects channels (`"0_speed"` … `"6_all"`), `split` selects bookmarks
-(`"single"`, `"fold00"`…`"fold05"`). Nothing else changes.
-
-The loader owns the seven things that are easy to get wrong and never fail
-loudly — which columns, which split's scaler, per channel not global,
-passthrough channels, raw target, de-normalisation, the eval mask. Its docstring
-explains each. Don't reimplement them.
-
-### Which split
-
-**Use one split for the whole paper.** Two configurations evaluated on different
-test sets cannot be subtracted.
-
-| | `single` (70/10/20) | `fold00`…`fold05` (rolling) |
-|---|---|---|
-| for | reproducing published numbers | everything else |
-| test rain episodes | **0** | 51 |
-| test event episodes | 17 | 50 |
-
-> ⚠️ The `single` test block (2017-05-25 → 06-30) contains **zero**
-> adverse-weather episodes — California's wet season is January to April. A
-> weather-conditioned model cannot differ from a traffic-only one there, because
-> the channel is constant across the whole block. `split.py` prints this when it
-> runs. Weather results must come from the rolling folds.
-
-## Raw data
-
-| Source | Location | Committed |
-|---|---|---|
-| PEMS-BAY (speed, occupancy, graph, labelled congestion blocks) | `data/raw/augmented-pems-bay/` | no — cloned by `acquire.py` |
-| Weather — ASOS SJC + NUQ, IDW-merged | `data/raw/weather/weather_5min.csv` | yes, 3 MB |
-| Events — 95 fixtures, 4 venues | `data/raw/events/events.csv` | yes |
-
-`data/raw/events/README.md` is the events data dictionary: every column, its
-source, and whether each value was observed or assumed.
-
-## Traps
-
-1. **Never build the time axis with `pd.date_range`.** PEMS-BAY timestamps are
-   local wall-clock US Pacific and 2017-03-12 02:00–02:55 does not exist (DST).
-   181 × 288 = 52,128, but the file has 52,116 columns. Generating the axis adds
-   12 phantom steps and silently shifts every later timestamp by an hour. The
-   axis comes from `speed.csv`'s own column names; join weather and events **by
-   label**.
-2. **The scaler is per channel, and per split.** One global mean/std would
-   average mph with a 0/1 holiday flag, kilometres and millimetres.
-3. **We keep weekends and holidays**, unlike Yu et al. 48% of our events fall on
-   a weekend; excluding them removes the windows this project evaluates.
-4. **`weather_hourly.csv` is gone.** It was a stale Open-Meteo export sitting at
-   the path the config pointed to while `build_weather()` wrote
-   `weather_5min.csv`. The file existed, so nothing raised. If you see that name
-   anywhere, it is stale.
-
-## Layout
-
-```
-configs/default.yaml    paths, thresholds, split parameters
-src/contract.py         shapes, channel order, splits  <- the interface
-src/data/               stages 1-7
-src/models/loader.py    data/processed -> model input
-src/eval/windows.py     the exogenous window definitions
-data/raw/               downloads; only weather + events are committed
-data/processed/         built tensors (gitignored, rebuild in 15 s)
-notebooks/              stage 8 reproduction
-STATUS.md               status, ownership, decisions
-CLAUDE.md               rules for Claude Code sessions
-```
-
-## Reproducibility
-
-Chronological splits, no shuffling. Scalers fit on train only, per channel, per
-fold. All metrics after de-normalization, masked with `eval_mask.npy`. Seed
-everything; 3 seeds per trained config.
+Yilang Mei, Raouf Tadros, Uwe König
