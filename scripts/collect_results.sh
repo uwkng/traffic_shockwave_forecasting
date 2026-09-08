@@ -56,7 +56,7 @@ cp checkpoints/*.pt "$OUT/checkpoints/" 2>/dev/null       # ~1.7 MB each
 [ -f run.log ] && cp run.log "$OUT/"
 cp configs/default.yaml "$OUT/meta/"
 $PY -m pip freeze > "$OUT/meta/pip-freeze.txt" 2>/dev/null
-cp CLAUDE.md STATUS.md notes/paper_tables.md "$OUT/" 2>/dev/null
+cp notes/paper_tables.md "$OUT/" 2>/dev/null
 {
   echo "commit:   $(git rev-parse HEAD 2>/dev/null || echo 'NO GIT - shipped as zip')"
   echo "branch:   $(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '-')"
@@ -85,7 +85,7 @@ echo "  results/       the tables and figures, ready for the paper"
 echo "  checkpoints/   per-run metadata AND model weights (.pt)"
 echo "  meta/          config, scalers, every *_meta.json, pip freeze"
 echo "  PROVENANCE.txt commit, GPU, torch, run count"
-echo "  *.md           CLAUDE.md, STATUS.md, paper_tables.md as of this run"
+echo "  *.md           paper_tables.md as of this run"
 if [ "$FULL" = "1" ]; then
   echo "  predictions/   raw tensors - any new window or figure is a re-read away"
 else
