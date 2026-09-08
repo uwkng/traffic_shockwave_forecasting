@@ -29,18 +29,30 @@ The data pipeline assembles an 11-channel tensor `[52116, 325, 11]` combining sp
 ## Project Structure
 
 ```
-configs/default.yaml        All paths, thresholds, and split parameters
-src/contract.py             Data contract: shapes, channel order, prediction format
-src/data/                   Stages 1 to 7: acquire, align, features, samples, split, normalise
-src/models/stgcn.py         STGCN architecture
-src/models/train.py         Training loop (rolling folds, multi-seed)
-src/models/baselines.py     Trivial baselines (historical mean, last-observed)
-src/models/loader.py        Builds DataLoaders from processed tensors
-src/eval/                   Window definitions, metrics, stratified reports, decision layer
-scripts/                    Experiment runners and result collection
-paper/                      Write-up (LaTeX source and compiled PDF)
-results/                    Per-fold reports, main results table, figures
-notebooks/                  Vanilla STGCN reproduction (stage 8)
+configs/
+    default.yaml                Configuration: paths, thresholds, split parameters
+
+src/
+    contract.py                 Data contract: shapes, channel order, prediction format
+    data/                       Stages 1 to 7: acquire, align, features, samples, split, normalise
+
+    models/
+        stgcn.py                STGCN architecture (symmetrised Laplacian)
+        train.py                Training loop (rolling folds, multi-seed)
+        baselines.py            Trivial baselines (historical mean, last-observed)
+        loader.py               Builds DataLoaders from processed tensors
+        single_split/           Single-split variant with target-window covariates
+
+    eval/
+        windows.py              Exogenous window definitions
+        metrics.py              MAE, RMSE, MAPE (masked, on de-normalised mph)
+        report.py               Stratified evaluation reports
+        decision.py             Decision layer
+        single_split/           Evaluator for the single-split variant
+
+scripts/                        Experiment runners and result collection
+results/                        Per-fold reports, main results table, figures
+notebooks/                      Vanilla STGCN reproduction (stage 8)
 ```
 
 ## Reproducing Results
